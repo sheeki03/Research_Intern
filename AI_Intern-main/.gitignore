@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Environment
+.env
+ai_intern/
+
+# Logs
+*.log
+!logs/.gitkeep
+
+# Reports
+reports/*.md
+!reports/.gitkeep
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db 
+
+# Rules & Utils
+.cursorrules
+REQUIREMENTS.md
+TODO.md
+
+# WIP
+on-chain_research/

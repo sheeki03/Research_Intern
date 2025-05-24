@@ -1,0 +1,20 @@
+# Example user configuration
+# Copy this file to users.yaml and update with real credentials
+# Passwords will be hashed automatically
+
+users:
+  admin:
+    password: admin123  # This will be hashed on first run
+    system_prompt: |
+      You are an expert research assistant. Your task is to analyze the provided DDQ
+      and create a comprehensive research report.
+    role: admin
+    rate_limit: 1000  # requests per hour
+
+  researcher:
+    password: researcher123  # This will be hashed on first run
+    system_prompt: |
+      You are a research analyst. Your task is to analyze the provided DDQ
+      and create a detailed research report focusing on key metrics.
+    role: user
+    rate_limit: 100  # requests per hour 

@@ -1,0 +1,86 @@
+Project data (DDQ, Call Notes & Card Content) for analysis
+=========================================================
+
+Act as a senior blockchain fund analyst. Read the materials below, then
+perform deep web-research to produce an institutional-level report
+on the given project to help guide investment decisions by Impossible Finance.
+Your output should cover: product, technology, traction, team, tokenomics &
+token value accrual, revenue model & P/E, competitive landscape, key risks,
+valuation, and conclude with a final *recommend / pass* decision.
+
+<freeform_text>
+KEY MINIMAL INFORMATION
+Rating for:
+- [ ] IDO
+- [ ] Advisory
+- [ ] FS
+- [ ] Other (specify):
+Deck:
+Website:
+Socials:
+Deal terms:
+</freeform_text>
+
+<calls_text>
+## Date
+## Attendees
+# Agenda Questions
+--------------------------------------------------------------------------------------------------------------
+# Actions Points
+--------------------------------------------------------------------------------------------------------------
+</calls_text>
+
+<ddq_text>
+## Token information
+1. Ticker: VSN
+2. Blockchain Network: ETH
+3. Current FDV: ~€390 mln.
+4. Circulating percentage: If the full circulating supply of the Bitpanda Ecosystem Token (BEST) and Pantos (PAN) is migrated to VSN, the circulating supply of VSN will be ~65% of the total VSN supply.
+## Social links
+5. Twitter link: The official X for VSN is not live yet, but Pantos’ X channel will be repurposed for this: https://x.com/pantosio?lang=en
+6. Discord link: N/A
+7. Telegram link: https://t.me/bitpanda_community
+8. Blog/Governance Link: not live yet.
+## Introduction and Project Synopsis
+1. A brief description of your project. (max 3 lines)
+Vision (VSN) is a Web3 ecosystem token designed to empower retail users through wallet rewards, trading fee discounts, all governed onchain with dynamic emission-based staking and revenue-driven burns that balance accessibility, utility, and long-term sustainability.
+## Team and Expertise
+1. Outline your team's composition, detailing the roles (BD, Tech, Marketing, etc) along with the count of full-time and part-time staff.
+1. Include short bios of the core team members.
+1. Detail a breakdown of your current runaway and burn rate.
+## Project Breakdown and Strategy
+1. What are the main product features live today?
+1. What is the current user acquisition and growth strategy?
+1. What KPIs are you actively tracking (e.g. revenue, DAU, retention, TVL)? Please provide latest figures.
+1. Who are your main competitors?
+## Revenue and Sustainability
+1. What are your current revenue streams (protocol fees, product sales, etc.)?
+1. Provide the latest revenue and runway projections tables and/or current figures whenever present.
+1. Please include any incentives being used to boost traction (this includes public incentives, private TVL deals and others)
+1. Is your current revenue recurring? If not, what key factors or models do you rely on to forecast future revenue?
+1. What is your current burn-rate and full-time employee headcount breakdown by department?
+## Tokenomics and Utility
+1. How does the token accrue value? (e.g. fee share, discounts, governance, staking, burns)
+1. Please provide a breakdown of your token distribution (team, investors, community, treasury, etc.), including vested vs. circulating portions, along with your annual emission schedule and overall distribution curve.
+1. Do you have control or plans to manage illiquid allocations?
+1. Have you made any past buybacks of your token, either private or public? If so, please provide timings and amounts
+1. Have you kept in touch with any of the current top token holders? do you have any other supply overhangs amongst already vested tokens?
+1. What is your token’s average daily volume and what is your token liquidity strategy for now (CEX MM, DEX pools, additional incentives)?
+## Fundraising
+1. Please share history of fundraising events, including secondary / OTC deals. Please detail valuations, timing and vesting terms for each event.
+1. Are you open for raising additional funds (via community round, strategic round, advisory partnerships)?
+1. What valuation would you consider a fair valuation for your project and which framework would you use to determine that?
+1. If yes:
+1. Do you have a pitch deck or updated project brief we can review?
+## Partnerships and Collaborations
+1. Please list any existing or notable advisors and strategic partners (tech, infra, marketing, investors).
+1. Provide the complete list of the KOLs you will work with. (Please indicate the total budget for the marketing sprint at launch.)
+1. Are there any strategies planned to expand TAM and capture Web2 users?
+## Risks
+1. What types of risks will the company be exposed to and how will those risks be managed?
+1. Are private keys in direct custody of the protocol/company? If yes, why? if applicable, how are the keys being managed?
+Open Questions / advise needed:
+1. DEX liqudity provision: So far, Bitpanda has had no experience in providing liquidity in a decentralised setup and is lacking the necessary infra (liquidity manager contracts, rebalancing bots, MEV protection etc.) and thus we have 2 options:
+### Completed
+- [x] ← check this box once the DD Qs is completed and ready for delivery to let the Impossible Finance Team know.
+</ddq_text>
