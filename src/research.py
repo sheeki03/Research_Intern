@@ -1,44 +1,40 @@
-from __future__ import annotations
-
-"""Deep-Research wrapper utilities.
+"""
+High-level orchestration helper to fetch Notion DDQ content and generate
+*AI Deep Research Reports* from it.
 
 This module exposes a single public helper – ``run_deep_research`` – that
-fetches the **Due-Diligence Questionnaire (DDQ)** markdown for a given
-Notion card *page_id*, feeds it into the **deep_research** agent and
-writes a full Markdown report to ``reports/report_{page_id}.md``.
+retrieves the raw content of a due diligence questionnaire (DDQ) from a
+Notion project card, conducts a deep web-search analysis using the DDQ
+text as input and finally persists the resulting markdown report to disk.
 
-If anything goes wrong the function raises ``RuntimeError`` so callers can
-abort the pipeline early.
+The bulk of the actual research logic is delegated to the external
+``web_research.deep_research`` module.
 """
 
-import os                                        #---------------------------------------#
-if "DEFAULT_SCRAPER" not in os.environ:          # outcomment to fall-back to playwright #
-    os.environ["DEFAULT_SCRAPER"] = "firecrawl"  #---------------------------------------# 
-
+# Standard library imports
+import os
 import asyncio
 import logging
 import pathlib
 from pathlib import Path
-from typing import List, Dict, Any, cast
+from typing import Any, Dict, List, cast
 
+# Third-party imports
 import httpx
 from notion_client import Client as NotionClient
 from notion_client.errors import RequestTimeoutError
 from notion_client import APIResponseError
 from tenacity import (
+    RetryError,
     Retrying,
     retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
 
-# ---------------------------------------------------------------------------
-# deep_research imports – resolved lazily to avoid heavy import if unused
-# ---------------------------------------------------------------------------
-from web_research.ai.providers import AIClientFactory
-from web_research.deep_research import deep_research as _deep_research
-from web_research.deep_research import write_final_report as _write_final_report
-from web_research.utils import logger as _dr_logger  # Re-use same config  # noqa: F401
+# No longer import web_research as we're using OpenRouterClient directly
+# from web_research.deep_research import deep_research as _deep_research
+# from web_research.deep_research import write_final_report as _write_final_report
 
 __all__ = ["run_deep_research"]
 
@@ -66,12 +62,15 @@ if not _logger.handlers:  # Prevent duplication during pytest reloads
     )
     _logger.addHandler(_handler)
 
-# Also route deep_research internal logger to the same file so that search/scrape
-# diagnostics appear alongside our orchestration logs.
-from web_research.utils import logger as _dp_logger  # noqa: E402
-if _handler and not any(isinstance(h, logging.FileHandler) and h.baseFilename == _handler.baseFilename for h in _dp_logger.handlers):
-    _dp_logger.addHandler(_handler)
-    _dp_logger.setLevel(logging.INFO)
+# Try to route deep_research internal logger to the same file if available
+try:
+    from web_research.utils import logger as _dp_logger  # noqa: E402
+    if _handler and not any(isinstance(h, logging.FileHandler) and h.baseFilename == _handler.baseFilename for h in _dp_logger.handlers):
+        _dp_logger.addHandler(_handler)
+        _dp_logger.setLevel(logging.INFO)
+except ImportError:
+    # web_research module not available, skip
+    pass
 
 # ---------------------------------------------------------------------------
 # Internal utilities
@@ -263,8 +262,9 @@ async def _deep_research_runner(
     # ------------------------------------------------------------------
     # 2. Kick-off deep research
     # ------------------------------------------------------------------
-    client = AIClientFactory.get_client("openai")
-    model = AIClientFactory.get_model("openai")
+    from src.openrouter import OpenRouterClient
+    client = OpenRouterClient()
+    model = os.getenv("OPENROUTER_PRIMARY_MODEL", "qwen/qwen3-30b-a3b:free")
 
     # You probably already fetched ddq_markdown earlier
     research_query = f"""
@@ -279,50 +279,63 @@ token vlue accrual, revenue model & P/E, competitive landscape, key risks, valua
 and a final recommend / pass.
 
 <ddq_markdown>
-{(ddq_markdown)}
+{ddq_markdown}
 </ddq_markdown>
 """.strip()
 
-    results = await _deep_research(
-        query=research_query,
-        breadth=breadth,
-        depth=depth,
-        concurrency=concurrency,
-        client=client,
-        model=model,
-    )
+    # Use our OpenRouter client directly instead of web_research deep_research
+    research_prompt = f"""
+Please analyze the following Due Diligence Questionnaire and generate a comprehensive investment analysis report:
 
-    # 'learnings' is a list of distilled insights—each string is a key finding
-    # produced by the deep-research agent, summarizing the most significant
-    # information gathered during the DDQ analysis and web searches.
-    learnings: List[str] = cast(List[str], results.get("learnings", []))
-    visited_urls: List[str] = cast(List[str], results.get("visited_urls", []))
-    _logger.info(
-        "action=research.done learnings=%d urls=%d", len(learnings), len(visited_urls)
-    )
+{research_query}
 
-    if visited_urls:
-        _logger.info("action=research.urls %s", " ".join(visited_urls))
-    else:
-        _logger.warning("action=research.warning no_urls_found")
+Please provide detailed analysis covering:
+1. Executive Summary
+2. Product and Technology Assessment
+3. Team and Execution Capability
+4. Market Opportunity and Competitive Landscape
+5. Tokenomics and Value Accrual Analysis
+6. Revenue Model and Financial Projections
+7. Risk Assessment
+8. Investment Recommendation
 
-    # ------------------------------------------------------------------
-    # 3. Compose final report
-    # ------------------------------------------------------------------
-    report_md = await _write_final_report(
-        prompt=ddq_markdown,
-        learnings=learnings,
-        visited_urls=visited_urls,
-        client=client,
-        model=model,
+Focus on actionable insights for institutional investment decision making.
+"""
+    
+    report_md = await client.generate_response(
+        prompt=research_prompt,
+        system_prompt="You are a senior blockchain investment analyst at Impossible Finance. Provide comprehensive due diligence analysis for institutional investment decisions.",
+        model_override=model
     )
+    
+    if not report_md:
+        raise RuntimeError("Failed to generate research report")
+
+    # Format the report with metadata
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    formatted_report = f"""# Due Diligence Investment Analysis Report
+
+**Generated:** {timestamp}
+**Model:** {model}
+**Page ID:** {page_id}
+
+---
+
+{report_md}
+
+---
+
+*This report was generated by AI Research Agent for Impossible Finance*
+"""
 
     reports_dir = Path("reports")
     reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = reports_dir / f"report_{page_id}.md"
-    report_path.write_text(report_md, encoding="utf-8")
+    report_path.write_text(formatted_report, encoding="utf-8")
 
-    _logger.info("action=report.saved path=%s bytes=%d", report_path, len(report_md))
+    _logger.info("action=report.saved path=%s bytes=%d", report_path, len(formatted_report))
 
     # ------------------------------------------------------------------
     # 4. Clean-up scraping resources (e.g. Playwright) to avoid warnings

@@ -505,6 +505,30 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         
         st.success(f"✅ Ready to process {len(selected_pages)} selected page(s)")
         
+        # Publishing Options in Manual Operations
+        st.markdown("#### 🔄 **Publishing Options**")
+        
+        # Initialize auto-publish session state if not exists
+        if 'notion_auto_publish_to_notion' not in st.session_state:
+            st.session_state.notion_auto_publish_to_notion = False  # Default to False for explicit user choice
+        
+        auto_publish = st.checkbox(
+            "📤 **Auto-publish reports back to Notion pages**",
+            value=st.session_state.get('notion_auto_publish_to_notion', False),
+            key="notion_auto_publish_checkbox",
+            help="Automatically create 'AI Deep Research Report by [username]' child pages in your Notion project pages"
+        )
+        st.session_state.notion_auto_publish_to_notion = auto_publish
+        
+        if auto_publish:
+            username = st.session_state.get('username', 'Unknown User')
+            st.success(f"✅ Reports will be automatically published as 'AI Deep Research Report by {username}' child pages")
+            st.caption("💡 Each report will include your username for team attribution")
+        else:
+            st.info("📁 Reports will only be saved locally - no Notion publishing")
+        
+        st.markdown("---")
+        
         # Add Additional Research Sources section
         await self._render_additional_research_sources()
         
@@ -1250,9 +1274,33 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             report_path = reports_dir / f"enhanced_report_{page_id}.md"
             report_path.write_text(report_md, encoding="utf-8")
             
+            # Check if auto-publish to Notion is enabled
+            auto_publish = st.session_state.get('notion_auto_publish_to_notion', True)
+            notion_url = None
+            
+            if auto_publish:
+                try:
+                    # Import and use the Notion writer
+                    from src.notion_writer import publish_report
+                    
+                    # Publish the report back to Notion as a child page
+                    notion_url = publish_report(page_id, report_path)
+                    
+                    self.show_success(f"✅ Report published to Notion: {notion_url}")
+                    
+                except Exception as notion_error:
+                    self.show_warning(f"⚠️ Report generated but Notion publishing failed: {str(notion_error)}")
+                    st.info("💾 Report saved locally and can be manually uploaded to Notion")
+            else:
+                st.info("📁 Report saved locally (auto-publish disabled)")
+            
             # Store in session state for display and chat (like Interactive Research)
             st.session_state.notion_unified_report_content = report_md
             st.session_state.notion_report_generated_for_chat = True
+            
+            # Store Notion URL if published
+            if notion_url:
+                st.session_state.notion_published_report_url = notion_url
             
             # Generate report ID for chat
             report_id = f"notion_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S%f')}"
@@ -1545,6 +1593,18 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             with col3:
                 rag_available = "✅" if st.session_state.get('notion_current_report_id_for_chat') in st.session_state.get('notion_rag_contexts', {}) else "❌"
                 st.metric("🧠 RAG Context", rag_available)
+            
+            # Show Notion publication status
+            notion_url = st.session_state.get('notion_published_report_url')
+            if notion_url:
+                st.success(f"🔗 **Published to Notion:** [View AI Deep Research Report]({notion_url})")
+                st.caption("The report has been automatically added as a child page to your Notion project")
+            else:
+                auto_publish = st.session_state.get('notion_auto_publish_to_notion', True)
+                if auto_publish:
+                    st.info("📁 Report saved locally • Auto-publish enabled for next run")
+                else:
+                    st.info("📁 Report saved locally • Auto-publish disabled")
             
             # Display report content
             with st.expander("📖 **View Full Report**", expanded=False):

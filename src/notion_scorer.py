@@ -1,6 +1,6 @@
 import os
 import json
-import openai
+from src.openrouter import OpenRouterClient
 
 SYSTEM_PROMPT = os.getenv("PROJECT_SCORER_PROMPT")
 
@@ -76,27 +76,41 @@ SCORE_PROJECT_SCHEMA = {
   }
 }
 
-def score_project(ddq_text: str, ai_text: str, calls_text: str, freeform_text: str) -> dict:
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    model = os.getenv("OPENAI_MODEL", "gpt-4")
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-            ddq_text=ddq_text, ai_text=ai_text,
-            calls_text=calls_text, freeform_text=freeform_text
-        )}
-    ]
-    # Create client using the v1.x API style
-    client = openai.OpenAI()
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=[{"type": "function", "function": SCORE_PROJECT_SCHEMA}],
-        tool_choice={"type": "function", "function": {"name": "score_project"}}
+async def score_project(ddq_text: str, ai_text: str, calls_text: str, freeform_text: str) -> dict:
+    client = OpenRouterClient()
+    
+    # Build the prompt for scoring
+    user_prompt = USER_PROMPT_TEMPLATE.format(
+        ddq_text=ddq_text, 
+        ai_text=ai_text,
+        calls_text=calls_text, 
+        freeform_text=freeform_text
     )
-    # Extract the arguments using the new response structure
-    arguments_str = response.choices[0].message.tool_calls[0].function.arguments
-    return json.loads(arguments_str)
+    
+    # Use OpenRouter client instead of OpenAI
+    response_text = await client.generate_response(
+        prompt=user_prompt,
+        system_prompt=SYSTEM_PROMPT,
+        temperature=0.1  # Low temperature for consistent scoring
+    )
+    
+    if not response_text:
+        raise RuntimeError("Failed to get scoring response from AI")
+    
+    try:
+        # Parse the JSON response
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        # If direct parsing fails, try to extract JSON from the response
+        import re
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+        
+        raise RuntimeError(f"Failed to parse JSON response: {e}. Response: {response_text}")
 
 # ---------------------------------------------------------------------------
 # NEW: high-level helper to score a Notion project card end-to-end
@@ -144,7 +158,7 @@ if not _logger.handlers:
 # Public orchestration helper
 # ---------------------------------------------------------------------------
 
-def run_project_scoring(page_id: str) -> Path:
+async def run_project_scoring(page_id: str) -> Path:
     """End-to-end wrapper that builds the context for *score_project*.
 
     The helper fetches the DDQ, call notes and card text for the given
@@ -200,26 +214,20 @@ def run_project_scoring(page_id: str) -> Path:
         _logger.info("action=report.loaded.source=notion bytes=%d", len(ai_text))
 
     # ------------------------------------------------------------------
-    # 3. Call LLM function tool *score_project*
+    # 3. Run the AI scoring
     # ------------------------------------------------------------------
-    score_dict: Dict[str, Any] = score_project(
-        ddq_text=ddq_text,
-        ai_text=ai_text,
-        calls_text=calls_text,
-        freeform_text=freeform_text,
-    )
-    _logger.info("action=score.generated keys=%d", len(score_dict))
+    scores = await score_project(ddq_text, ai_text, calls_text, freeform_text)
+    _logger.info("action=scoring.done")
 
     # ------------------------------------------------------------------
-    # 4. Persist JSON under /reports
+    # 4. Persist the results as JSON
     # ------------------------------------------------------------------
     reports_dir.mkdir(parents=True, exist_ok=True)
-    json_path = reports_dir / f"score_{page_id}.json"
-    json_path.write_text(json.dumps(score_dict, indent=2, ensure_ascii=False), encoding="utf-8")
+    score_path = reports_dir / f"score_{page_id}.json"
+    score_path.write_text(json.dumps(scores, indent=2), encoding="utf-8")
+    _logger.info("action=score.saved path=%s", score_path)
 
-    _logger.info("action=score.saved path=%s bytes=%d", json_path, json_path.stat().st_size)
-
-    return json_path
+    return score_path
 
 # ---------------------------------------------------------------------------
 # Helper – fetch *AI Deep Research Report* markdown from Notion (if present)
