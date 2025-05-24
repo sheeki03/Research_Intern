@@ -1,0 +1,6 @@
+timestamp=2025-05-25T02:57:03+0530 level=INFO message=action=ddq.candidates page_id=1e77cf9e-26b8-8177-8b72-c7cff210e43e candidates=['Due Diligence Questionaire']
+timestamp=2025-05-25T02:57:04+0530 level=INFO message=action=ddq.candidate_check page_id=1e77cf9e-26b8-8177-8b72-c7cff210e43e candidate=Due Diligence Questionaire completed=True
+timestamp=2025-05-25T02:57:04+0530 level=INFO message=action=ddq.selected page_id=1e77cf9e-26b8-8177-8b72-c7cff210e43e selected=Due Diligence Questionaire
+timestamp=2025-05-25T03:17:01+0530 level=INFO message=action=ddq.candidates page_id=1e77cf9e-26b8-8177-8b72-c7cff210e43e candidates=['Due Diligence Questionaire']
+timestamp=2025-05-25T03:17:03+0530 level=INFO message=action=ddq.candidate_check page_id=1e77cf9e-26b8-8177-8b72-c7cff210e43e candidate=Due Diligence Questionaire completed=True
+timestamp=2025-05-25T03:17:03+0530 level=INFO message=action=ddq.selected page_id=1e77cf9e-26b8-8177-8b72-c7cff210e43e selected=Due Diligence Questionaire

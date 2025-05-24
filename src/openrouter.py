@@ -1,10 +1,11 @@
 import os
 import json
 import aiohttp
-import ssl
 from aiohttp import ClientTimeout
 from typing import Dict, Any, Optional, List, TypedDict
 import asyncio
+import ssl
+import certifi
 from .config import (
     OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL,
@@ -42,14 +43,18 @@ class OpenRouterClient:
         }
         
         request_timeout = ClientTimeout(total=300)
-        
-        # Create SSL context with proper certificate handling
-        ssl_context = ssl.create_default_context()
-        # For development, you might need to disable verification if certificates are problematic
-        # ssl_context.check_hostname = False
-        # ssl_context.verify_mode = ssl.CERT_NONE
 
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        # Create SSL context with proper certificate verification
+        try:
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+        except Exception as ssl_error:
+            print(f"SSL context creation failed, using relaxed SSL verification: {ssl_error}")
+            # Fallback: Create SSL context with relaxed verification for development
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
 
         async with aiohttp.ClientSession(headers=self.headers, connector=connector) as session:
             try:
@@ -68,24 +73,6 @@ class OpenRouterClient:
                 except Exception as read_e:
                     print(f"Could not read error body: {read_e}")
                 return None
-            except ssl.SSLError as e:
-                print(f"SSL Error making request to OpenRouter API with {model}: {e}")
-                print("Trying again with relaxed SSL verification...")
-                # Fallback with relaxed SSL for development environments
-                try:
-                    ssl_context_relaxed = ssl.create_default_context()
-                    ssl_context_relaxed.check_hostname = False
-                    ssl_context_relaxed.verify_mode = ssl.CERT_NONE
-                    connector_relaxed = aiohttp.TCPConnector(ssl=ssl_context_relaxed)
-                    
-                    async with aiohttp.ClientSession(headers=self.headers, connector=connector_relaxed) as session_relaxed:
-                        async with session_relaxed.post(url, json=payload, timeout=request_timeout) as response:
-                            response.raise_for_status()
-                            print(f"Successfully connected with relaxed SSL verification")
-                            return await response.json()
-                except Exception as fallback_e:
-                    print(f"Fallback SSL request also failed: {fallback_e}")
-                    return None
             except aiohttp.ClientError as e:
                 print(f"Client Error making request to OpenRouter API with {model}: {e}")
                 return None

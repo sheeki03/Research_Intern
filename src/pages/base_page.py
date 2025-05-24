@@ -51,11 +51,14 @@ class BasePage(ABC):
             if key not in st.session_state:
                 st.session_state[key] = default_value
     
-    def show_page_header(self, subtitle: Optional[str] = None) -> None:
+    def show_page_header(self, title: Optional[str] = None, subtitle: Optional[str] = None) -> None:
         """Show standard page header."""
-        st.header(self.page_title)
+        if title:
+            st.header(title)
+        else:
+            st.header(self.page_title)
         if subtitle:
-            st.subheader(subtitle)
+            st.caption(subtitle)
         st.markdown("---")
     
     def show_error(self, message: str, log_details: Optional[str] = None) -> None:

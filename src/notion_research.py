@@ -146,27 +146,95 @@ def _list_blocks(client: NotionClient, block_id: str) -> List[Dict[str, Any]]:
 
 
 def _notion_block_to_markdown(block: Dict[str, Any]) -> str:
-    """Very lightweight block->Markdown converter (best-effort)."""
+    """Enhanced Notion block->Markdown converter with better content extraction."""
 
     b_type: str = block.get("type", "unknown")
     data = block.get(b_type, {})  # type: ignore[arg-type]
 
     def _rich_to_text(rich: List[Dict[str, Any]]) -> str:
-        return "".join(part.get("plain_text", "") for part in rich)
+        """Enhanced rich text extraction with formatting preservation."""
+        result = ""
+        for part in rich:
+            text = part.get("plain_text", "")
+            annotations = part.get("annotations", {})
+            
+            # Apply formatting
+            if annotations.get("bold", False):
+                text = f"**{text}**"
+            if annotations.get("italic", False):
+                text = f"*{text}*"
+            if annotations.get("strikethrough", False):
+                text = f"~~{text}~~"
+            if annotations.get("code", False):
+                text = f"`{text}`"
+            
+            # Handle links
+            if part.get("href"):
+                text = f"[{text}]({part['href']})"
+                
+            result += text
+        return result
 
-    if b_type in {"paragraph", "quote", "callout", "toggle"}:
+    # Handle different block types with enhanced content extraction
+    if b_type == "paragraph":
         return _rich_to_text(data.get("rich_text", []))
-    if b_type in {"heading_1", "heading_2", "heading_3"}:
+    elif b_type == "quote":
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"> {content}" if content else ""
+    elif b_type == "callout":
+        icon = data.get("icon", {}).get("emoji", "💡")
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"{icon} {content}" if content else ""
+    elif b_type == "toggle":
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"▶ {content}" if content else ""
+    elif b_type in {"heading_1", "heading_2", "heading_3"}:
         hashes = "#" * int(b_type[-1])
-        return f"{hashes} {_rich_to_text(data.get('rich_text', []))}"
-    if b_type == "bulleted_list_item":
-        return f"- {_rich_to_text(data.get('rich_text', []))}"
-    if b_type == "numbered_list_item":
-        return f"1. {_rich_to_text(data.get('rich_text', []))}"
-    if b_type == "to_do":
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"{hashes} {content}" if content else ""
+    elif b_type == "bulleted_list_item":
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"- {content}" if content else ""
+    elif b_type == "numbered_list_item":
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"1. {content}" if content else ""
+    elif b_type == "to_do":
         chk = "x" if data.get("checked", False) else " "
-        return f"- [{chk}] {_rich_to_text(data.get('rich_text', []))}"
-    # fallback – ignore unsupported blocks
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"- [{chk}] {content}" if content else ""
+    elif b_type == "code":
+        language = data.get("language", "")
+        content = _rich_to_text(data.get("rich_text", []))
+        return f"```{language}\n{content}\n```" if content else ""
+    elif b_type == "divider":
+        return "---"
+    elif b_type == "table":
+        # Basic table support - would need more complex handling for full tables
+        return "[Table content - see original Notion page for details]"
+    elif b_type == "image":
+        url = data.get("external", {}).get("url") or data.get("file", {}).get("url", "")
+        caption_parts = data.get("caption", [])
+        caption = _rich_to_text(caption_parts) if caption_parts else ""
+        if url:
+            return f"![{caption}]({url})" if caption else f"![Image]({url})"
+        return "[Image]"
+    elif b_type == "embed":
+        url = data.get("url", "")
+        return f"[Embedded content: {url}]" if url else "[Embedded content]"
+    elif b_type == "bookmark":
+        url = data.get("url", "")
+        caption_parts = data.get("caption", [])
+        caption = _rich_to_text(caption_parts) if caption_parts else url
+        return f"[Bookmark: {caption}]({url})" if url else "[Bookmark]"
+    elif b_type == "equation":
+        expression = data.get("expression", "")
+        return f"${expression}$" if expression else ""
+    
+    # Log unsupported block types for debugging
+    if b_type not in {"child_page", "child_database", "link_preview", "unsupported"}:
+        _logger.debug(f"Unsupported block type: {b_type}")
+    
+    # fallback – ignore unsupported blocks but don't lose content
     return ""
 
 
@@ -237,12 +305,21 @@ def _fetch_ddq_markdown(page_id: str) -> str:
         and b["child_page"]["title"].lower().startswith("due diligence")
     ]
 
+    # DEBUG: Log all DDQ candidates found
+    candidate_titles = [b["child_page"]["title"] for b in ddq_candidates]
+    _logger.info("action=ddq.candidates page_id=%s candidates=%s", page_id, candidate_titles)
+    
     # Prefer the first questionnaire that is marked as completed.
     ddq_block: Dict[str, Any] | None = None
     for cand in ddq_candidates:
         cand_id = cast(str, cand["id"])
-        if _ddq_is_completed(client, cand_id):
+        cand_title = cand["child_page"]["title"]
+        is_completed = _ddq_is_completed(client, cand_id)
+        _logger.info("action=ddq.candidate_check page_id=%s candidate=%s completed=%s", page_id, cand_title, is_completed)
+        
+        if is_completed:
             ddq_block = cand
+            _logger.info("action=ddq.selected page_id=%s selected=%s", page_id, cand_title)
             break
 
     if ddq_block is None:
@@ -347,6 +424,11 @@ async def _deep_research_runner(
     ddq_md_path.write_text(ddq_text, encoding="utf-8")
     _logger.info("action=content.fetched ddq_bytes=%d calls_bytes=%d freeform_bytes=%d",
                 len(ddq_text), len(calls_text), len(freeform_text))
+    
+    # DEBUG: Log first 500 chars of each content section for debugging
+    _logger.info("action=content.preview ddq_start=%s", ddq_text[:500].replace('\n', '\\n') if ddq_text else "EMPTY")
+    _logger.info("action=content.preview calls_start=%s", calls_text[:500].replace('\n', '\\n') if calls_text else "EMPTY")
+    _logger.info("action=content.preview freeform_start=%s", freeform_text[:500].replace('\n', '\\n') if freeform_text else "EMPTY")
 
     # ------------------------------------------------------------------
     # 2. Kick-off deep research
@@ -356,13 +438,34 @@ async def _deep_research_runner(
     model = os.getenv("OPENROUTER_PRIMARY_MODEL", "qwen/qwen3-30b-a3b:free")
 
     # Build the prompt that will be fed into the deep-research agent.
-    header = os.getenv("DEEP_RESEARCH_PROMPT")
-    research_query = (
-        f"{header}\n\n"
-        f"<freeform_text>\n{freeform_text}\n</freeform_text>\n\n"
-        f"<calls_text>\n{calls_text}\n</calls_text>\n\n"
-        f"<ddq_text>\n{ddq_text}\n</ddq_text>"
-    )
+    header = os.getenv("DEEP_RESEARCH_PROMPT", "Analyze the following project content for investment due diligence:")
+    
+    # Create clearly separated content sections to avoid confusion
+    research_query = f"""{header}
+
+==========================================
+CONTENT SOURCES FOR ANALYSIS
+==========================================
+
+## 1. PROJECT OVERVIEW (Main Card Content)
+{freeform_text if freeform_text.strip() else "No project overview content available."}
+
+## 2. CALL NOTES & CONVERSATIONS  
+{calls_text if calls_text.strip() else "No call notes available."}
+
+## 3. DUE DILIGENCE QUESTIONNAIRE RESPONSES
+{ddq_text if ddq_text.strip() else "No DDQ responses available."}
+
+==========================================
+ANALYSIS INSTRUCTIONS
+==========================================
+Please analyze the above content carefully, ensuring you:
+1. Distinguish between different information sources
+2. Cross-reference claims across multiple sources
+3. Note any inconsistencies or gaps in information  
+4. Base your analysis only on the content provided above
+5. Do not make assumptions about information not explicitly stated
+"""
 
     # Use our OpenRouter client directly instead of web_research deep_research
     research_prompt = f"""
@@ -381,39 +484,32 @@ Please provide detailed analysis covering:
 Focus on actionable insights for investment decision making.
 """
     
+    enhanced_system_prompt = """You are a senior blockchain investment analyst conducting due diligence research. 
+
+CRITICAL ACCURACY REQUIREMENTS:
+- Only use information explicitly stated in the provided content
+- Do not make assumptions about team roles, company affiliations, or other details not clearly stated
+- If information is unclear or conflicting between sources, note this explicitly
+- Cross-reference facts across different content sections before stating them as fact
+- When unsure about specific details (names, titles, affiliations), use qualifying language like "appears to be" or "according to the [source]"
+
+Provide comprehensive due diligence analysis based strictly on the provided materials."""
+
     report_md = await client.generate_response(
         prompt=research_prompt,
-        system_prompt="You are a senior blockchain investment analyst. Provide comprehensive due diligence analysis.",
+        system_prompt=enhanced_system_prompt,
         model_override=model
     )
     
     if not report_md:
         raise RuntimeError("Failed to generate research report")
 
-    # Format the report with metadata
-    from datetime import datetime
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    formatted_report = f"""# Due Diligence Research Report
-
-**Generated:** {timestamp}
-**Model:** {model}
-**Page ID:** {page_id}
-
----
-
-{report_md}
-
----
-
-*This report was generated by AI Research Agent*
-"""
-
+    # Use the clean AI response directly (no metadata wrapper)
     reports_dir = Path("reports")
     reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = reports_dir / f"report_{page_id}.md"
-    report_path.write_text(formatted_report, encoding="utf-8")
-    _logger.info("action=report.saved path=%s bytes=%d", report_path, len(formatted_report))
+    report_path.write_text(report_md, encoding="utf-8")
+    _logger.info("action=report.saved path=%s bytes=%d", report_path, len(report_md))
 
     # ------------------------------------------------------------------
     # DEBUG: persist the exact prompt used for the LLM to the reports dir

@@ -8,6 +8,8 @@ from datetime import datetime
 import os
 import asyncio
 import time
+import ssl
+import certifi
 
 class FirecrawlClient:
     def __init__(
@@ -90,7 +92,20 @@ class FirecrawlClient:
             **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})
         }
 
-        async with aiohttp.ClientSession() as session:
+        # Create SSL context with fallback handling
+        ssl_context = None
+        try:
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+        except Exception as ssl_error:
+            print(f"Warning: Could not create SSL context with certifi: {ssl_error}. Using default.")
+            try:
+                ssl_context = ssl.create_default_context()
+            except Exception as fallback_error:
+                print(f"Warning: Could not create default SSL context: {fallback_error}. Disabling SSL verification.")
+                ssl_context = False
+        
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        async with aiohttp.ClientSession(connector=connector) as session:
             while attempts < max_attempts:
                 if time.monotonic() - start_time > timeout:
                     raise TimeoutError(f"Polling timed out after {timeout} seconds for URL: {status_url}")
@@ -190,7 +205,20 @@ class FirecrawlClient:
         final_result = {} # Initialize final_result
 
         try:
-            async with aiohttp.ClientSession() as session:
+            # Create SSL context with fallback handling
+            ssl_context = None
+            try:
+                ssl_context = ssl.create_default_context(cafile=certifi.where())
+            except Exception as ssl_error:
+                print(f"Warning: Could not create SSL context with certifi: {ssl_error}. Using default.")
+                try:
+                    ssl_context = ssl.create_default_context()
+                except Exception as fallback_error:
+                    print(f"Warning: Could not create default SSL context: {fallback_error}. Disabling SSL verification.")
+                    ssl_context = False
+            
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 print(f"DEBUG: POSTing to {scrape_endpoint} for URL: {url} with payload: {scrape_payload}")
                 # Add timeout to the main scrape request
                 async with session.post(

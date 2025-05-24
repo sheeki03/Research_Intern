@@ -29,7 +29,6 @@ except ImportError:
 
 from src.pages.base_page import BasePage
 from src.notion_watcher import poll_notion_db
-from src.notion_research import run_deep_research  
 from src.notion_writer import publish_report
 from src.notion_scorer import run_project_scoring
 from src.notion_pusher import publish_ratings
@@ -45,7 +44,7 @@ from src.core.rag_utils import (
     DEFAULT_EMBEDDING_MODEL,
     TOP_K_RESULTS
 )
-from src.models.chat_models import ChatSession, ChatHistoryItem
+from src.models.chat_models import ChatSession, ChatHistoryItem, ChatMessageInput, ChatMessageOutput
 
 # Cache configuration
 CACHE_DURATION_HOURS = 6
@@ -101,7 +100,7 @@ class NotionAutomationPage(BasePage):
         return None
 
     async def render(self) -> None:
-        """Render the Notion automation page."""
+        """Render the Notion automation page with improved UX/UI."""
         if not self.check_authentication():
             self.show_auth_required_message()
             return
@@ -116,25 +115,43 @@ class NotionAutomationPage(BasePage):
         self._init_clients()
         
         # Show page content
-        self.show_page_header("Monitor Notion database and run automated research pipelines")
+        self.show_page_header("🔗 Notion CRM Integration", 
+                             subtitle="Connect with your Notion database to automate research workflows")
         
         # Check environment variables
         if not self._check_environment():
             return
         
-        # Render main sections
-        await self._render_configuration_section()
-        await self._render_page_selection_section()
-        await self._render_monitoring_section()
-        await self._render_manual_operations()
-        await self._render_additional_research_sources()
+        # Render progress tracking at top if operation is running
         await self._render_progress_tracking()
-        await self._render_automation_status()
         
-        # New sections matching Interactive Research
-        await self._render_report_display()
-        await self._render_admin_panel()
-        await self._render_chat_interface()
+        # Main content organized in tabs for better UX
+        tab1, tab2, tab3, tab4 = st.tabs(["🎯 **Workflow**", "⚙️ **Settings**", "📊 **Results**", "👨‍💼 **Admin**"])
+        
+        with tab1:
+            st.markdown("### 🎯 Main Workflow")
+            await self._render_page_selection_section()
+            await self._render_manual_operations()
+            await self._render_additional_research_sources()
+        
+        with tab2:
+            st.markdown("### ⚙️ Configuration & Monitoring")
+            await self._render_configuration_section()
+            await self._render_monitoring_section()
+        
+        with tab3:
+            st.markdown("### 📊 Results & Reports")
+            await self._render_automation_status()
+            await self._render_report_display()
+            await self._render_scoring_results()
+            await self._render_chat_interface()
+        
+        with tab4:
+            if st.session_state.get("role") == "admin":
+                st.markdown("### 👨‍💼 Admin Controls")
+                await self._render_admin_panel()
+            else:
+                st.info("🔒 Admin access required")
     
     def _init_session_state(self) -> None:
         """Initialize required session state keys."""
@@ -199,131 +216,140 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         return True
     
     async def _render_configuration_section(self) -> None:
-        """Render the configuration section."""
-        st.subheader("🔧 Configuration")
+        """Render the simplified configuration section."""
+        import os
         
-        with st.expander("Environment Status", expanded=False):
-            import os
+        # Quick environment status check
+        required_vars = ["NOTION_TOKEN", "NOTION_DB_ID", "OPENROUTER_API_KEY"]
+        missing = [var for var in required_vars if not os.getenv(var)]
+        
+        if missing:
+            st.error(f"❌ Missing environment variables: {', '.join(missing)}")
+            with st.expander("🔧 Environment Setup Help"):
+                st.markdown("""
+                Add these to your `.env` file:
+                ```
+                NOTION_TOKEN=your_notion_integration_token
+                NOTION_DB_ID=your_notion_database_id
+                OPENROUTER_API_KEY=your_openrouter_api_key
+                ```
+                """)
+        else:
+            st.success("✅ Environment configured correctly")
             
-            # Show environment variable status
-            vars_to_check = {
-                "NOTION_TOKEN": "Notion Integration Token",
-                "NOTION_DB_ID": "Notion Database ID", 
-                "OPENROUTER_API_KEY": "OpenRouter API Key",
-                "OPENROUTER_BASE_URL": "OpenRouter Base URL",
-                "FIRECRAWL_BASE_URL": "Firecrawl Base URL"
-            }
-            
-            for var, description in vars_to_check.items():
-                value = os.getenv(var, "")
-                if value:
-                    if "token" in var.lower() or "key" in var.lower():
-                        display_value = f"{value[:8]}...{value[-4:]}" if len(value) > 12 else "***"
+            with st.expander("🔍 **View Environment Details**"):
+                vars_to_check = {
+                    "NOTION_TOKEN": "Notion Integration Token",
+                    "NOTION_DB_ID": "Notion Database ID", 
+                    "OPENROUTER_API_KEY": "OpenRouter API Key",
+                    "OPENROUTER_BASE_URL": "OpenRouter Base URL",
+                    "FIRECRAWL_BASE_URL": "Firecrawl Base URL"
+                }
+                
+                for var, description in vars_to_check.items():
+                    value = os.getenv(var, "")
+                    if value:
+                        if "token" in var.lower() or "key" in var.lower():
+                            display_value = f"{value[:8]}...{value[-4:]}" if len(value) > 12 else "***"
+                        else:
+                            display_value = value
+                        st.write(f"✅ **{description}**: `{display_value}`")
                     else:
-                        display_value = value
-                    st.write(f"✅ **{description}**: `{display_value}`")
-                else:
-                    st.write(f"❌ **{description}**: Not set")
-        
-        st.markdown("---")
+                        st.write(f"❌ **{description}**: Not set")
     
     async def _render_page_selection_section(self) -> None:
-        """Render the page selection section with caching."""
-        st.subheader("📄 Notion Page Selection")
+        """Render the page selection section with improved UX."""
         
-        # Check cache status
-        cache_data = self._load_cache()
-        cache_age = self._get_cache_age()
-        
-        # Display cache status
-        col1, col2, col3 = st.columns([2, 1, 1])
-        
+        # Step 1: Data Source - Simplified
+        col1, col2 = st.columns([3, 1])
         with col1:
-            if cache_data:
-                if cache_age:
-                    hours = int(cache_age.total_seconds() / 3600)
-                    minutes = int((cache_age.total_seconds() % 3600) / 60)
-                    if hours > 0:
-                        age_str = f"{hours}h {minutes}m ago"
-                    else:
-                        age_str = f"{minutes}m ago"
-                    
-                    cache_status = f"🟢 **Cache Available** (Updated {age_str})"
-                    remaining_hours = CACHE_DURATION_HOURS - cache_age.total_seconds() / 3600
-                    if remaining_hours > 1:
-                        cache_status += f" • Valid for {remaining_hours:.1f}h more"
-                    else:
-                        cache_status += " • Expires soon"
-                else:
-                    cache_status = "🟡 **Cache Available** (Unknown age)"
-            else:
-                cache_status = "🔴 **No Cache** • Will fetch from Notion API"
-            
-            st.markdown(cache_status)
-        
+            st.markdown("#### 📄 **Step 1: Load Notion Pages**")
+            st.caption("Get pages with completed Due Diligence Questionnaires")
         with col2:
-            # Load from cache button (if cache exists)
-            if cache_data and st.button("💾 Load Cached", key="load_cache_btn", help="Load pages from 6-hour cache"):
-                await self._load_cached_pages()
-        
-        with col3:
-            # Fresh fetch button
-            if st.button("🔍 Fetch Fresh", key="fetch_fresh_btn", help="Fetch latest data from Notion API"):
+            # Smart loading button
+            cache_data = self._load_cache()
+            if cache_data:
+                if st.button("💾 Load Cached", key="load_cache_btn", help="Load from 6-hour cache"):
+                    await self._load_cached_pages()
+            
+            if st.button("🔍 Fetch Fresh", key="fetch_fresh_btn", help="Get latest from Notion API"):
                 await self._fetch_fresh_pages()
+        
+        # Cache status - simplified
+        cache_age = self._get_cache_age()
+        if cache_age:
+            hours = cache_age.total_seconds() / 3600
+            if hours < 1:
+                st.caption(f"💾 Cache: {int(cache_age.total_seconds() / 60)}m old")
+            else:
+                st.caption(f"💾 Cache: {hours:.1f}h old")
+        else:
+            st.caption("📡 No cache - click Fetch Fresh to load pages")
         
         # Auto-load cache on first visit if available
         if cache_data and not st.session_state.get('notion_available_pages'):
             st.info("💾 Loading cached pages automatically...")
             await self._load_cached_pages()
         
-        # Show available pages if fetched
+        # Step 2: Page Selection - Clean and Simple
         if st.session_state.get('notion_available_pages'):
-            st.markdown("**Select pages for automation:**")
-            
             pages = st.session_state.notion_available_pages
+            selected_pages = st.session_state.get('notion_selected_pages', [])
             
-            # Select all / none buttons
-            col1, col2 = st.columns([1, 1])
+            st.markdown("#### 📋 **Step 2: Select Pages for Processing**")
+            
+            # Quick selection controls
+            col1, col2, col3 = st.columns([1, 1, 2])
             with col1:
-                if st.button("✅ Select All", key="select_all_pages"):
+                if st.button("✅ All", key="select_all_pages"):
                     st.session_state.notion_selected_pages = [p['id'] for p in pages]
                     st.rerun()
             with col2:
-                if st.button("❌ Clear Selection", key="clear_selection"):
+                if st.button("❌ None", key="clear_selection"):
                     st.session_state.notion_selected_pages = []
                     st.rerun()
+            with col3:
+                selected_count = len(selected_pages)
+                total_count = len(pages)
+                st.metric("Selected", f"{selected_count}/{total_count}")
             
-            # Page checkboxes
-            selected_pages = st.session_state.get('notion_selected_pages', [])
-            
-            for page in pages:
-                page_id = page['id']
-                page_title = page.get('title', 'Untitled')
-                page_status = page.get('status', 'Unknown')
+            # Compact page selection with better layout
+            if len(pages) <= 5:
+                # Show all pages if few
+                for page in pages:
+                    page_id = page['id']
+                    page_title = page.get('title', 'Untitled')
+                    is_selected = page_id in selected_pages
+                    
+                    if st.checkbox(f"📋 {page_title}", value=is_selected, key=f"page_cb_{page_id}"):
+                        if page_id not in selected_pages:
+                            st.session_state.notion_selected_pages.append(page_id)
+                    else:
+                        if page_id in selected_pages:
+                            st.session_state.notion_selected_pages.remove(page_id)
+            else:
+                # Use multiselect for many pages
+                selected_titles = [p['title'] for p in pages if p['id'] in selected_pages]
+                all_titles = [p['title'] for p in pages]
                 
-                is_selected = page_id in selected_pages
+                selected_from_widget = st.multiselect(
+                    "Choose pages:",
+                    options=all_titles,
+                    default=selected_titles,
+                    key="page_multiselect"
+                )
                 
-                # Create a more informative label
-                label = f"📋 **{page_title}** (Status: {page_status})"
-                
-                if st.checkbox(label, value=is_selected, key=f"page_cb_{page_id}"):
-                    if page_id not in selected_pages:
-                        st.session_state.notion_selected_pages.append(page_id)
-                else:
-                    if page_id in selected_pages:
-                        st.session_state.notion_selected_pages.remove(page_id)
-            
-            # Show selection summary with cache info
-            selected_count = len(st.session_state.notion_selected_pages)
-            total_count = len(pages)
-            data_source = "💾 cached" if st.session_state.get('pages_from_cache') else "🔍 fresh"
-            st.caption(f"**Selected: {selected_count}/{total_count} pages** • Data: {data_source}")
+                # Update session state based on multiselect
+                st.session_state.notion_selected_pages = [
+                    p['id'] for p in pages if p['title'] in selected_from_widget
+                ]
         
         else:
+            st.markdown("#### 📋 **Step 2: Select Pages**")
             if cache_data:
-                st.info("💾 Click 'Load Cached' to view cached pages or 'Fetch Fresh' for latest data")
+                st.info("💾 Click 'Load Cached' above to view available pages")
             else:
-                st.info("🔍 Click 'Fetch Fresh' to load your Notion database entries")
+                st.info("🔍 Click 'Fetch Fresh' above to load your Notion database")
         
         st.markdown("---")
     
@@ -447,132 +473,135 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         await self._fetch_fresh_pages()
     
     async def _render_monitoring_section(self) -> None:
-        """Render the monitoring section."""
-        st.subheader("📊 Database Monitoring")
+        """Render the simplified monitoring section."""
         
-        col1, col2, col3 = st.columns([1, 1, 1])
-        
+        # Status display
+        col1, col2 = st.columns([1, 1])
         with col1:
-            if st.button("▶️ Start Monitoring", key="start_monitoring_btn"):
-                await self._start_notion_monitoring()
+            is_active = st.session_state.get('notion_polling_active', False)
+            status = "🟢 ACTIVE" if is_active else "⚪ INACTIVE"
+            st.metric("Auto-Monitoring", status)
         
         with col2:
-            if st.button("⏹️ Stop Monitoring", key="stop_monitoring_btn"):
-                await self._stop_notion_monitoring()
+            last_poll = st.session_state.get('notion_last_poll_time')
+            if last_poll and isinstance(last_poll, datetime):
+                time_str = last_poll.strftime("%H:%M")
+            else:
+                time_str = "Never"
+            st.metric("Last Poll", time_str)
         
+        # Control buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("▶️ Start Auto-Monitor", key="start_monitoring_btn"):
+                await self._start_notion_monitoring()
+        with col2:
+            if st.button("⏹️ Stop Auto-Monitor", key="stop_monitoring_btn"):  
+                await self._stop_notion_monitoring()
         with col3:
-            if st.button("🔍 Poll Now", key="manual_poll_btn"):
+            if st.button("🔍 Manual Poll", key="manual_poll_btn"):
                 await self._manual_poll_database()
         
-        # Show monitoring status with better visuals
-        status_col1, status_col2 = st.columns([1, 1])
-        
-        with status_col1:
-            if st.session_state.get('notion_polling_active'):
-                st.success("🟢 **Monitoring: ACTIVE**")
-            else:
-                st.info("🔵 **Monitoring: INACTIVE**")
-        
-        with status_col2:
-            if st.session_state.get('notion_last_poll_time'):
-                last_poll = st.session_state.notion_last_poll_time
-                if isinstance(last_poll, datetime):
-                    time_str = last_poll.strftime("%H:%M:%S")
-                else:
-                    time_str = str(last_poll)
-                st.write(f"🕐 **Last poll**: {time_str}")
-            else:
-                st.write("🕐 **Last poll**: Never")
-        
-        # Show poll results if available
+        # Compact poll results
         if st.session_state.get('notion_last_poll_results'):
-            with st.expander("📋 Latest Poll Results", expanded=False):
-                results = st.session_state.notion_last_poll_results
-                st.json(results)
-        
-        st.markdown("---")
+            results = st.session_state.notion_last_poll_results
+            pages_found = results.get('total_entries', 0)
+            if pages_found > 0:
+                st.caption(f"💡 Last poll found {pages_found} pages with completed DDQs")
+            else:
+                st.caption("💡 Last poll found no new completed DDQs")
     
     async def _render_manual_operations(self) -> None:
-        """Render manual operations section."""
-        st.subheader("🎯 Manual Operations")
-        
-        # Check if pages are selected
+        """Render streamlined manual operations section."""
         selected_pages = st.session_state.get('notion_selected_pages', [])
         
+        # Step 3: Operations
+        st.markdown("#### ⚡ **Step 3: Run Operations**")
+        st.caption("**Workflow:** Enhanced Research → Project Scoring → Reports & Analysis")
+        
         if not selected_pages:
-            st.warning("⚠️ Please select pages above before running manual operations")
-            return
+            st.info("💡 Select pages above to enable operations")
+            st.stop()
         
-        st.success(f"✅ Ready to process {len(selected_pages)} selected page(s)")
+        # Quick settings
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            auto_publish = st.checkbox(
+                "📤 Auto-publish to Notion",
+                value=st.session_state.get('notion_auto_publish_to_notion', False),
+                key="notion_auto_publish_checkbox",
+                help="Create 'AI Deep Research Report by [username]' child pages"
+            )
+            st.session_state.notion_auto_publish_to_notion = auto_publish
         
-        # Publishing Options in Manual Operations
-        st.markdown("#### 🔄 **Publishing Options**")
+        with col2:
+            st.metric("Ready", f"{len(selected_pages)} pages")
         
-        # Initialize auto-publish session state if not exists
-        if 'notion_auto_publish_to_notion' not in st.session_state:
-            st.session_state.notion_auto_publish_to_notion = False  # Default to False for explicit user choice
-        
-        auto_publish = st.checkbox(
-            "📤 **Auto-publish reports back to Notion pages**",
-            value=st.session_state.get('notion_auto_publish_to_notion', False),
-            key="notion_auto_publish_checkbox",
-            help="Automatically create 'AI Deep Research Report by [username]' child pages in your Notion project pages"
-        )
-        st.session_state.notion_auto_publish_to_notion = auto_publish
-        
-        if auto_publish:
-            username = st.session_state.get('username', 'Unknown User')
-            st.success(f"✅ Reports will be automatically published as 'AI Deep Research Report by {username}' child pages")
-            st.caption("💡 Each report will include your username for team attribution")
-        else:
-            st.info("📁 Reports will only be saved locally - no Notion publishing")
-        
-        st.markdown("---")
-        
-        # Add Additional Research Sources section
-        await self._render_additional_research_sources()
-        
-        # Operation buttons
-        col1, col2, col3 = st.columns(3)
+        # Main operation buttons - prominent and clear
+        col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔬 Enhanced Research", key="manual_research_btn", help="Run deep research with all sources on selected pages"):
+            st.markdown("**🔬 Enhanced Research**")
+            st.caption("Step 1: Comprehensive analysis with extra sources")
+            if st.button("🚀 Start Enhanced Research", key="manual_research_btn", type="primary"):
                 await self._manual_research_pipeline()
         
         with col2:
-            if st.button("📊 Update Scoring", key="manual_scoring_btn", help="Run AI scoring on selected pages"):
-                await self._manual_scoring_update()
+            st.markdown("**📊 Project Scoring**")  
+            st.caption("Step 2: AI-powered investment evaluation")
+            
+            # Check if reports exist for selected pages
+            has_reports, report_status = self._check_reports_exist_detailed(selected_pages)
+            
+            if not has_reports:
+                st.button("📊 Start Scoring", key="manual_scoring_btn_disabled", disabled=True, 
+                         help="Run Enhanced Research first to generate reports needed for scoring")
+                st.info("💡 Run Enhanced Research first")
+                
+                # Debug info to help troubleshoot
+                if st.checkbox("🔍 Show debug info", key="debug_reports"):
+                    st.write("**Debug - Report Status:**")
+                    for page_id, status in report_status.items():
+                        st.write(f"📄 `{page_id}`: {status}")
+                    
+                    # Also show what files actually exist in reports directory
+                    from pathlib import Path
+                    reports_dir = Path("reports")
+                    if reports_dir.exists():
+                        st.write("**Files in reports directory:**")
+                        report_files = list(reports_dir.glob("*.md"))
+                        if report_files:
+                            for file in sorted(report_files):
+                                size = file.stat().st_size
+                                st.write(f"📄 `{file.name}` ({size:,} bytes)")
+                        else:
+                            st.write("No .md files found")
+                    else:
+                        st.write("Reports directory does not exist")
+            else:
+                if st.button("📊 Start Scoring", key="manual_scoring_btn"):
+                    await self._manual_scoring_update()
+                
+                # Show which reports were found
+                st.success(f"✅ Found reports for {len([s for s in report_status.values() if 'Found' in s])} pages")
         
-        with col3:
-            if st.button("📝 Generate Reports", key="manual_reports_btn", help="Generate reports for selected pages"):
-                await self._manual_generate_reports()
-        
-        # Manual Research section with clear explanation
-        st.markdown("### 🔍 Custom Research Query")
-        st.markdown("""
-        **What is Manual Research?**
-        - Enter a custom research question or topic
-        - The AI will research this topic using web search
-        - Results will be saved as a report
-        - Useful for ad-hoc research not tied to specific Notion pages
-        """)
-        
-        research_query = st.text_area(
-            "Enter your research question:",
-            height=100,
-            key="manual_research_query",
-            placeholder="Example: 'What are the latest trends in DeFi lending protocols?' or 'Analyze the competitive landscape for NFT marketplaces'"
-        )
-        
-        if st.button("🚀 Run Custom Research", key="custom_research_btn") and research_query:
-            await self._run_custom_research(research_query)
-        
-        st.markdown("---")
+        # Custom research - simplified
+        with st.expander("🔍 **Custom Research** (optional)", expanded=False):
+            st.caption("Research any topic independently of Notion pages")
+            research_query = st.text_area(
+                "Research question:",
+                height=80,
+                key="manual_research_query",
+                placeholder="What are the latest trends in DeFi lending protocols?"
+            )
+            
+            if st.button("🚀 Research", key="custom_research_btn") and research_query:
+                await self._run_custom_research(research_query)
     
     async def _render_additional_research_sources(self) -> None:
-        """Render additional research sources section."""
-        st.markdown("### 📚 **Additional Research Sources**")
-        st.markdown("*Enhance your Notion DDQ research with extra context and data*")
+        """Render streamlined additional research sources section."""
+        st.markdown("#### 📚 **Step 4: Add Extra Sources** (Optional)")
+        st.caption("Enhance research with documents, URLs, or website crawling")
         
         # Initialize session state for additional sources
         additional_sources_keys = {
@@ -585,144 +614,142 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         }
         self.init_session_state(additional_sources_keys)
         
-        # Create tabs for different source types
-        tab1, tab2, tab3, tab4 = st.tabs(["📄 Documents", "🌐 Web URLs", "🕷️ Site Crawling", "🤖 AI Model"])
-        
-        with tab1:
-            st.markdown("#### 📄 Upload Additional Documents")
-            st.caption("Add documents to supplement the DDQ analysis")
+        # Collapsible additional sources
+        with st.expander("📚 **Configure Additional Sources**", expanded=False):
             
-            uploaded_files = st.file_uploader(
-                "Choose files (PDF, DOCX, TXT, MD)",
-                type=['pdf', 'docx', 'txt', 'md'],
-                accept_multiple_files=True,
-                key="notion_additional_docs"
-            )
+            # Create tabs for different source types
+            tab1, tab2, tab3, tab4 = st.tabs(["📄 Documents", "🌐 Web URLs", "🕷️ Site Crawling", "🤖 AI Model"])
             
-            if uploaded_files:
-                st.session_state.notion_uploaded_docs = uploaded_files
-                st.success(f"✅ {len(uploaded_files)} document(s) uploaded")
+            with tab1:
+                st.markdown("#### 📄 Upload Additional Documents")
+                st.caption("Add documents to supplement the DDQ analysis")
                 
-                with st.expander("📋 Uploaded Files", expanded=False):
-                    for file in uploaded_files:
-                        st.write(f"📄 **{file.name}** ({file.size:,} bytes)")
-            else:
-                st.session_state.notion_uploaded_docs = []
-        
-        with tab2:
-            st.markdown("#### 🌐 Provide Specific Web URLs")
-            st.caption("Add relevant web pages for additional context")
-            
-            # URL input area
-            urls_text = st.text_area(
-                "Enter URLs (one per line):",
-                height=150,
-                key="notion_urls_input",
-                placeholder="https://example.com/whitepaper\nhttps://docs.project.com/overview\nhttps://blog.company.com/announcement"
-            )
-            
-            if urls_text.strip():
-                urls = [url.strip() for url in urls_text.strip().split('\n') if url.strip()]
-                st.session_state.notion_web_urls = urls
-                
-                if urls:
-                    st.success(f"✅ {len(urls)} URL(s) added")
-                    with st.expander("🔗 URLs to Process", expanded=False):
-                        for i, url in enumerate(urls, 1):
-                            st.write(f"{i}. {url}")
-            else:
-                st.session_state.notion_web_urls = []
-        
-        with tab3:
-            st.markdown("#### 🕷️ Crawl & Scrape Websites")
-            st.caption("Automatically discover and scrape content from websites")
-            
-            crawl_option = st.radio(
-                "Choose crawling method:",
-                ["None", "Option A: Scan Site Sitemap", "Option B: Crawl from URL"],
-                key="notion_crawl_method"
-            )
-            
-            st.session_state.notion_crawl_option = crawl_option
-            
-            if crawl_option == "Option A: Scan Site Sitemap":
-                st.markdown("**📋 Scan Site for URLs from Sitemap**")
-                st.caption("Get a comprehensive list of all pages from the website's sitemap")
-                
-                sitemap_url = st.text_input(
-                    "URL to scan for sitemap:",
-                    key="notion_sitemap_url",
-                    placeholder="https://example.com"
+                uploaded_files = st.file_uploader(
+                    "Choose files (PDF, DOCX, TXT, MD)",
+                    type=['pdf', 'docx', 'txt', 'md'],
+                    accept_multiple_files=True,
+                    key="notion_additional_docs"
                 )
-                st.session_state.notion_crawl_sitemap_url = sitemap_url
                 
-                if st.button("Scan Site for URLs", key="notion_scan_sitemap_btn"):
-                    if sitemap_url:
-                        await self._scan_sitemap(sitemap_url)
-                    else:
-                        self.show_warning("Please enter a URL to scan.")
-                
-                # Display scan results
-                await self._render_sitemap_results()
-                
-                if sitemap_url and not st.session_state.get('notion_sitemap_scan_in_progress'):
-                    st.info(f"🗺️ Will scan sitemap: {sitemap_url}")
+                if uploaded_files:
+                    st.session_state.notion_uploaded_docs = uploaded_files
+                    st.success(f"✅ {len(uploaded_files)} document(s) uploaded")
+                    
+                    with st.expander("📋 Uploaded Files", expanded=False):
+                        for file in uploaded_files:
+                            st.write(f"📄 **{file.name}** ({file.size:,} bytes)")
+                else:
+                    st.session_state.notion_uploaded_docs = []
             
-            elif crawl_option == "Option B: Crawl from URL":
-                st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
-                st.caption("Follow links automatically to discover related content")
+            with tab2:
+                st.markdown("#### 🌐 Provide Specific Web URLs")
+                st.caption("Add relevant web pages for additional context")
                 
-                crawl_url = st.text_input(
-                    "Starting URL:",
-                    key="notion_crawl_start_url",
-                    placeholder="https://example.com"
+                # URL input area
+                urls_text = st.text_area(
+                    "Enter URLs (one per line):",
+                    height=150,
+                    key="notion_urls_input",
+                    placeholder="https://example.com/whitepaper\nhttps://docs.project.com/overview\nhttps://blog.company.com/announcement"
                 )
-                st.session_state.notion_crawl_url = crawl_url
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    max_pages = st.number_input("Max pages to crawl:", min_value=1, max_value=50, value=10, key="notion_max_pages")
-                with col2:
-                    max_depth = st.number_input("Max depth:", min_value=1, max_value=5, value=2, key="notion_max_depth")
+                if urls_text.strip():
+                    urls = [url.strip() for url in urls_text.strip().split('\n') if url.strip()]
+                    st.session_state.notion_web_urls = urls
+                    
+                    if urls:
+                        st.success(f"✅ {len(urls)} URL(s) added")
+                        with st.expander("🔗 URLs to Process", expanded=False):
+                            for i, url in enumerate(urls, 1):
+                                st.write(f"{i}. {url}")
+                else:
+                    st.session_state.notion_web_urls = []
+            
+            with tab3:
+                st.markdown("#### 🕷️ Crawl & Scrape Websites")
+                st.caption("Automatically discover and scrape content from websites")
                 
-                if crawl_url:
-                    st.info(f"🔍 Will crawl from: {crawl_url} (max {max_pages} pages, depth {max_depth})")
+                crawl_option = st.radio(
+                    "Choose crawling method:",
+                    ["None", "Option A: Scan Site Sitemap", "Option B: Crawl from URL"],
+                    key="notion_crawl_method"
+                )
+                
+                st.session_state.notion_crawl_option = crawl_option
+                
+                if crawl_option == "Option A: Scan Site Sitemap":
+                    st.markdown("**📋 Scan Site for URLs from Sitemap**")
+                    st.caption("Get a comprehensive list of all pages from the website's sitemap")
+                    
+                    sitemap_url = st.text_input(
+                        "URL to scan for sitemap:",
+                        key="notion_sitemap_url",
+                        placeholder="https://example.com"
+                    )
+                    st.session_state.notion_crawl_sitemap_url = sitemap_url
+                    
+                    if st.button("Scan Site for URLs", key="notion_scan_sitemap_btn"):
+                        if sitemap_url:
+                            await self._scan_sitemap(sitemap_url)
+                        else:
+                            self.show_warning("Please enter a URL to scan.")
+                    
+                    # Display scan results
+                    await self._render_sitemap_results()
+                    
+                    if sitemap_url and not st.session_state.get('notion_sitemap_scan_in_progress'):
+                        st.info(f"🗺️ Will scan sitemap: {sitemap_url}")
+                
+                elif crawl_option == "Option B: Crawl from URL":
+                    st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
+                    st.caption("Follow links automatically to discover related content")
+                    
+                    crawl_url = st.text_input(
+                        "Starting URL:",
+                        key="notion_crawl_start_url",
+                        placeholder="https://example.com"
+                    )
+                    st.session_state.notion_crawl_url = crawl_url
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        max_pages = st.number_input("Max pages to crawl:", min_value=1, max_value=50, value=10, key="notion_max_pages")
+                    with col2:
+                        max_depth = st.number_input("Max depth:", min_value=1, max_value=5, value=2, key="notion_max_depth")
+                    
+                    if crawl_url:
+                        st.info(f"🔍 Will crawl from: {crawl_url} (max {max_pages} pages, depth {max_depth})")
+            
+            with tab4:
+                st.markdown("#### 🤖 AI Model Selection")
+                st.caption("Choose the AI model for research and analysis")
+                
+                model_options = AI_MODEL_OPTIONS
+                
+                selected_model = st.selectbox(
+                    "Select AI Model:",
+                    options=list(model_options.keys()),
+                    format_func=lambda x: model_options[x],
+                    key="notion_model_selection"
+                )
+                
+                st.session_state.notion_selected_model = selected_model
+                st.info(f"🤖 Selected: {model_options[selected_model]}")
         
-        with tab4:
-            st.markdown("#### 🤖 AI Model Selection")
-            st.caption("Choose the AI model for research and analysis")
-            
-            model_options = AI_MODEL_OPTIONS
-            
-            selected_model = st.selectbox(
-                "Select AI Model:",
-                options=list(model_options.keys()),
-                format_func=lambda x: model_options[x],
-                key="notion_model_selection"
-            )
-            
-            st.session_state.notion_selected_model = selected_model
-            st.info(f"🤖 Selected: {model_options[selected_model]}")
-        
-        # Summary of additional sources
-        st.markdown("#### 📊 **Research Enhancement Summary**")
+        # Summary of additional sources (outside expander)
+        doc_count = len(st.session_state.get('notion_uploaded_docs', []))
+        url_count = len(st.session_state.get('notion_web_urls', []))
+        crawl_status = "✅" if st.session_state.get('notion_crawl_option', 'None') != 'None' else "❌"
+        model_name = st.session_state.get('notion_selected_model', '').split('/')[-1][:10]
         
         col1, col2, col3, col4 = st.columns(4)
-        
         with col1:
-            doc_count = len(st.session_state.get('notion_uploaded_docs', []))
             st.metric("📄 Documents", doc_count)
-        
         with col2:
-            url_count = len(st.session_state.get('notion_web_urls', []))
             st.metric("🌐 Web URLs", url_count)
-        
         with col3:
-            crawl_status = "✅" if st.session_state.get('notion_crawl_option', 'None') != 'None' else "❌"
             st.metric("🕷️ Crawling", crawl_status)
-        
         with col4:
-            model_name = st.session_state.get('notion_selected_model', '').split('/')[-1][:10]
             st.metric("🤖 Model", model_name)
         
         # Show what will be included in research
@@ -745,69 +772,69 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         st.markdown("---")
     
     async def _render_progress_tracking(self) -> None:
-        """Render real-time progress tracking."""
+        """Render compact progress tracking at top."""
         if st.session_state.get('notion_current_operation'):
-            st.subheader("⏳ Operation in Progress")
-            
             operation = st.session_state.notion_current_operation
             progress = st.session_state.get('notion_operation_progress', {})
             
-            st.info(f"🔄 **Currently running**: {operation}")
+            # Compact progress bar at top
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                if 'percentage' in progress:
+                    st.progress(progress['percentage'] / 100)
+                else:
+                    st.progress(0.1)  # Show indeterminate progress
+                    
+                status_text = progress.get('status', 'Processing...')
+                st.caption(f"🔄 {operation}: {status_text}")
             
-            # Progress bar if available
-            if 'percentage' in progress:
-                st.progress(progress['percentage'] / 100)
-                st.caption(f"Progress: {progress['percentage']}%")
-            
-            # Status message
-            if 'status' in progress:
-                st.write(f"📝 **Status**: {progress['status']}")
-            
-            # Time elapsed
-            if 'start_time' in progress:
-                elapsed = datetime.now() - progress['start_time']
-                st.caption(f"⏱️ Elapsed: {str(elapsed).split('.')[0]}")
+            with col2:
+                if 'start_time' in progress:
+                    elapsed = datetime.now() - progress['start_time']
+                    elapsed_str = str(elapsed).split('.')[0]
+                    st.metric("⏱️ Elapsed", elapsed_str)
             
             st.markdown("---")
     
     async def _render_automation_status(self) -> None:
-        """Render automation status and logs."""
-        st.subheader("📈 Automation Status")
+        """Render simplified automation status."""
         
-        # Create status cards
+        # Key metrics in a compact layout
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            monitoring_status = "✅ ON" if st.session_state.get('notion_polling_active') else "❌ OFF"
-            st.metric("Monitoring", monitoring_status)
+            monitoring_status = "✅ ON" if st.session_state.get('notion_polling_active') else "⚪ OFF"
+            st.metric("Auto-Monitor", monitoring_status)
         
         with col2:
             selected_count = len(st.session_state.get('notion_selected_pages', []))
-            st.metric("Selected Pages", selected_count)
+            st.metric("Pages Selected", selected_count)
         
         with col3:
             log_count = len(st.session_state.get('notion_automation_logs', []))
-            st.metric("Total Operations", log_count)
+            st.metric("Operations Run", log_count)
         
         with col4:
-            operation_status = "🔄 BUSY" if st.session_state.get('notion_current_operation') else "💤 IDLE"
-            st.metric("Status", operation_status)
+            operation_status = "🔄 BUSY" if st.session_state.get('notion_current_operation') else "✅ READY"
+            st.metric("System Status", operation_status)
         
-        # Recent activity logs
+        # Activity log - more compact
         if st.session_state.get('notion_automation_logs'):
-            with st.expander("📜 Recent Activity", expanded=False):
-                logs = st.session_state.notion_automation_logs[-10:]  # Show last 10
+            with st.expander("📜 **Recent Activity**", expanded=False):
+                logs = st.session_state.notion_automation_logs[-5:]  # Show last 5
                 for log in reversed(logs):  # Show newest first
                     timestamp = log.get('timestamp', 'Unknown')
                     message = log.get('message', 'No message')
                     user = log.get('user', 'System')
                     
                     if isinstance(timestamp, datetime):
-                        time_str = timestamp.strftime("%H:%M:%S")
+                        time_str = timestamp.strftime("%H:%M")
                     else:
                         time_str = str(timestamp)
                     
-                    st.write(f"🕐 **{time_str}** | 👤 {user} | {message}")
+                    st.caption(f"🕐 {time_str} | 👤 {user} | {message}")
+        else:
+            st.info("💡 No operations run yet - try Enhanced Research or Project Scoring")
     
     async def _start_notion_monitoring(self) -> None:
         """Start Notion database monitoring."""
@@ -988,12 +1015,31 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     self._update_progress(progress, f"Processing: {page_info['title']} ({i+1}/{len(selected_pages)})")
                     
                     try:
-                        # Get DDQ content from Notion
+                        # Get DDQ content from Notion with proper null handling
                         from src.notion_research import _fetch_ddq_markdown, _fetch_calls_text, _fetch_freeform_text
                         
-                        ddq_content = _fetch_ddq_markdown(page_id)
-                        calls_content = _fetch_calls_text(page_id)
-                        freeform_content = _fetch_freeform_text(page_id)
+                        try:
+                            ddq_content = _fetch_ddq_markdown(page_id)
+                        except Exception as ddq_error:
+                            self.show_warning(f"DDQ fetch failed for {page_info['title']}: {str(ddq_error)}")
+                            ddq_content = "DDQ content not available."
+                        
+                        try:
+                            calls_content = _fetch_calls_text(page_id)
+                        except Exception as calls_error:
+                            self.show_warning(f"Call notes fetch failed for {page_info['title']}: {str(calls_error)}")
+                            calls_content = "Call notes not available."
+                        
+                        try:
+                            freeform_content = _fetch_freeform_text(page_id)
+                        except Exception as freeform_error:
+                            self.show_warning(f"Freeform content fetch failed for {page_info['title']}: {str(freeform_error)}")
+                            freeform_content = "Freeform content not available."
+                        
+                        # Ensure all content is strings, not None
+                        ddq_content = ddq_content or "No DDQ content available."
+                        calls_content = calls_content or "No call notes available."
+                        freeform_content = freeform_content or "No freeform content available."
                         
                         # Combine all content sources
                         combined_content = self._combine_all_sources(
@@ -1005,14 +1051,28 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                             page_id, page_info['title'], combined_content, selected_model
                         )
                         
-                        results.append({
-                            'page_id': page_id,
-                            'page_title': page_info['title'],
-                            'status': 'Success',
-                            'report_path': str(report_path),
-                            'sources_used': self._get_sources_summary(uploaded_docs, web_urls, crawl_option),
-                            'model_used': selected_model
-                        })
+                        # Verify the file was actually created
+                        if report_path.exists():
+                            file_size = report_path.stat().st_size
+                            results.append({
+                                'page_id': page_id,
+                                'page_title': page_info['title'],
+                                'status': 'Success',
+                                'report_path': str(report_path),
+                                'file_size': file_size,
+                                'sources_used': self._get_sources_summary(uploaded_docs, web_urls, crawl_option),
+                                'model_used': selected_model,
+                                'notion_url': st.session_state.get('notion_published_report_url'),
+                                'auto_publish_enabled': st.session_state.get('notion_auto_publish_to_notion', False),
+                                'username': st.session_state.get('username', 'Unknown User')
+                            })
+                        else:
+                            results.append({
+                                'page_id': page_id,
+                                'page_title': page_info['title'],
+                                'status': 'Error',
+                                'error': f'Report generation completed but file not found at {report_path}'
+                            })
                         
                     except Exception as page_error:
                         results.append({
@@ -1057,8 +1117,27 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                             st.success(f"✅ **{result['page_title']}**")
                             st.caption(f"📄 Page ID: `{result['page_id']}`")
                             st.caption(f"📊 Report: `{result['report_path']}`")
+                            
+                            # Show file size if available
+                            if result.get('file_size'):
+                                st.caption(f"📁 File: {result['file_size']:,} bytes")
+                            
                             st.caption(f"📚 Sources: {result['sources_used']}")
                             st.caption(f"🤖 Model: {result['model_used']}")
+                            
+                            # Show Notion publication status
+                            if result.get('notion_url') and result.get('auto_publish_enabled'):
+                                username = result.get('username', 'Unknown User')
+                                st.caption(f"🔗 Notion: [AI Deep Research Report by {username}]({result['notion_url']})")
+                            elif result.get('auto_publish_enabled'):
+                                st.caption(f"📁 Notion: Publishing enabled but no URL available")
+                            else:
+                                st.caption(f"📁 Notion: Auto-publish disabled")
+                                
+                            # Show username attribution
+                            username = result.get('username', 'Unknown User')
+                            st.caption(f"👤 Created by: {username}")
+                            
                         else:
                             st.error(f"❌ **{result['page_title']}**")
                             st.caption(f"📄 Page ID: `{result['page_id']}`")
@@ -1234,38 +1313,47 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         return combined
     
     async def _run_enhanced_research(self, page_id, page_title, combined_content, model):
-        """Run AI research on combined content."""
+        """Run AI research on combined content using OpenRouterClient directly."""
         try:
-            # Import AI research functions
-            from web_research.deep_research import deep_research as _deep_research
-            from web_research.deep_research import write_final_report as _write_final_report
-            
-            # Initialize AI client with selected model
+            # Get our OpenRouter client
             client = st.session_state.get('notion_openrouter_client')
             if not client:
                 raise RuntimeError("OpenRouter client not available")
             
-            # Run deep research with combined content
-            results = await _deep_research(
-                query=combined_content,
-                breadth=2,  # Enhanced breadth for better research
-                depth=2,    # Enhanced depth
-                concurrency=2,
-                client=client,
-                model=model,
+            # Generate enhanced research report using our client directly
+            research_prompt = f"""
+Please analyze the following comprehensive research material and generate a detailed due diligence report.
+
+# Research Material for {page_title}
+
+{combined_content}
+
+Please provide:
+1. Executive Summary
+2. Key Findings
+3. Technology Analysis
+4. Business Model Assessment
+5. Risk Analysis
+6. Market Analysis
+7. Team Assessment
+8. Financial Analysis
+9. Competitive Landscape
+10. Investment Recommendation
+
+Format your response as a comprehensive markdown report with clear headings and bullet points.
+Include specific data points and quotes from the source material where relevant.
+"""
+            
+            # Generate the report using OpenRouterClient
+            report_md = await client.generate_response(
+                prompt=research_prompt,
+                system_prompt="You are an expert investment analyst conducting due diligence research. Provide thorough, analytical insights based on the provided materials.",
+                model_override=model
             )
             
-            # Generate final report
-            learnings = results.get("learnings", [])
-            visited_urls = results.get("visited_urls", [])
-            
-            report_md = await _write_final_report(
-                prompt=combined_content,
-                learnings=learnings,
-                visited_urls=visited_urls,
-                client=client,
-                model=model,
-            )
+            # Handle None response from API
+            if not report_md:
+                raise RuntimeError("AI model returned empty response - this may be due to SSL connectivity issues or API errors")
             
             # Save enhanced report to file
             from pathlib import Path
@@ -1275,18 +1363,21 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             report_path.write_text(report_md, encoding="utf-8")
             
             # Check if auto-publish to Notion is enabled
-            auto_publish = st.session_state.get('notion_auto_publish_to_notion', True)
+            auto_publish = st.session_state.get('notion_auto_publish_to_notion', False)
             notion_url = None
             
             if auto_publish:
                 try:
-                    # Import and use the Notion writer
+                    # Import and use the Notion writer with username
                     from src.notion_writer import publish_report
                     
-                    # Publish the report back to Notion as a child page
-                    notion_url = publish_report(page_id, report_path)
+                    # Get username from session state
+                    username = st.session_state.get('username', 'Unknown User')
                     
-                    self.show_success(f"✅ Report published to Notion: {notion_url}")
+                    # Publish the report back to Notion as a child page with username attribution
+                    notion_url = publish_report(page_id, report_path, username)
+                    
+                    self.show_success(f"✅ Report published to Notion: [AI Deep Research Report by {username}]({notion_url})")
                     
                 except Exception as notion_error:
                     self.show_warning(f"⚠️ Report generated but Notion publishing failed: {str(notion_error)}")
@@ -1306,7 +1397,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             report_id = f"notion_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S%f')}"
             st.session_state.notion_current_report_id_for_chat = report_id
             
-            # Build RAG context automatically
+            # Build RAG context automatically (if available)
             await self._build_rag_context(report_id)
             
             return report_path
@@ -1338,21 +1429,47 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         """Update scoring manually for selected pages."""
         try:
             selected_pages = st.session_state.get('notion_selected_pages', [])
+            if not selected_pages:
+                self.show_warning("⚠️ No pages selected for scoring")
+                return
+                
+            page_lookup = st.session_state.get('notion_available_pages_lookup', {})
             self._start_operation(f"Scoring Update ({len(selected_pages)} pages)")
             
-            with st.spinner("📊 Updating project scoring..."):
-                total_pages = len(selected_pages)
-                for i, page_id in enumerate(selected_pages):
-                    progress = int((i + 1) / total_pages * 100)
-                    self._update_progress(progress, f"Scoring page {i+1}/{total_pages}: {page_id[:8]}...")
+            successful_scoring = 0
+            failed_scoring = 0
+            
+            for i, page_id in enumerate(selected_pages):
+                page_info = page_lookup.get(page_id, {'title': f'Page {page_id[:8]}', 'id': page_id})
+                progress = int((i + 1) / len(selected_pages) * 100)
+                self._update_progress(progress, f"Scoring: {page_info['title']} ({i+1}/{len(selected_pages)})")
+                
+                try:
+                    # Run actual project scoring
+                    score_path = await run_project_scoring(page_id)
+                    successful_scoring += 1
+                    self.show_info(f"✅ Scored: {page_info['title']} → {score_path}")
                     
-                    # Simulate scoring time
-                    await asyncio.sleep(0.8)
-                
-                # Add log entry
-                self._add_automation_log(f"Scoring update completed for {len(selected_pages)} pages")
-                
-                self.show_success(f"✅ Scoring update completed for {len(selected_pages)} pages!")
+                except Exception as scoring_error:
+                    failed_scoring += 1
+                    error_msg = str(scoring_error)
+                    
+                    # Provide helpful guidance for common errors
+                    if "not found in Notion" in error_msg or "file is missing" in error_msg:
+                        self.show_warning(f"❌ {page_info['title']}: No research report found. Run Enhanced Research first.")
+                    elif "run_deep_research" in error_msg:
+                        self.show_warning(f"❌ {page_info['title']}: Research report required. Generate a report first.")
+                    else:
+                        self.show_warning(f"❌ Scoring failed for {page_info['title']}: {error_msg}")
+                    continue
+            
+            # Add log entry
+            self._add_automation_log(f"Scoring: {successful_scoring} success, {failed_scoring} failed out of {len(selected_pages)} pages")
+            
+            if successful_scoring > 0:
+                self.show_success(f"✅ Scoring completed! {successful_scoring} success, {failed_scoring} failed")
+            else:
+                self.show_error(f"❌ All scoring attempts failed ({failed_scoring} total)")
                 
             self._end_operation()
                 
@@ -1360,32 +1477,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             self._end_operation()
             self.show_error(f"Scoring update failed: {str(e)}")
     
-    async def _manual_generate_reports(self) -> None:
-        """Generate reports for selected pages."""
-        try:
-            selected_pages = st.session_state.get('notion_selected_pages', [])
-            self._start_operation(f"Report Generation ({len(selected_pages)} pages)")
-            
-            with st.spinner("📝 Generating reports..."):
-                total_pages = len(selected_pages)
-                for i, page_id in enumerate(selected_pages):
-                    progress = int((i + 1) / total_pages * 100)
-                    self._update_progress(progress, f"Generating report {i+1}/{total_pages}: {page_id[:8]}...")
-                    
-                    # Simulate report generation time
-                    await asyncio.sleep(1.2)
-                
-                # Add log entry
-                self._add_automation_log(f"Report generation completed for {len(selected_pages)} pages")
-                
-                self.show_success(f"✅ Reports generated for {len(selected_pages)} pages!")
-                
-            self._end_operation()
-                
-        except Exception as e:
-            self._end_operation()
-            self.show_error(f"Report generation failed: {str(e)}")
-    
+
     async def _run_custom_research(self, query: str) -> None:
         """Run custom research with the given query."""
         try:
@@ -1512,6 +1604,44 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             total_count = len(st.session_state.notion_discovered_sitemap_urls)
             st.caption(f"✅ {selected_count}/{total_count} URLs selected for scraping")
 
+    def _check_reports_exist(self, selected_pages: List[str]) -> bool:
+        """Check if research reports exist for the selected pages."""
+        has_reports, _ = self._check_reports_exist_detailed(selected_pages)
+        return has_reports
+    
+    def _check_reports_exist_detailed(self, selected_pages: List[str]) -> tuple[bool, dict]:
+        """Check if research reports exist for the selected pages with detailed status."""
+        if not selected_pages:
+            return False, {}
+        
+        from pathlib import Path
+        reports_dir = Path("reports")
+        
+        if not reports_dir.exists():
+            return False, {page_id: "Reports directory doesn't exist" for page_id in selected_pages}
+        
+        report_status = {}
+        has_any_reports = False
+        
+        # Check each selected page
+        for page_id in selected_pages:
+            # Check for enhanced report file
+            enhanced_report = reports_dir / f"enhanced_report_{page_id}.md"
+            regular_report = reports_dir / f"report_{page_id}.md"
+            
+            if enhanced_report.exists():
+                size = enhanced_report.stat().st_size
+                report_status[page_id] = f"Found enhanced report ({size:,} bytes)"
+                has_any_reports = True
+            elif regular_report.exists():
+                size = regular_report.stat().st_size
+                report_status[page_id] = f"Found regular report ({size:,} bytes)"
+                has_any_reports = True
+            else:
+                report_status[page_id] = "No report file found"
+        
+        return has_any_reports, report_status
+    
     def _init_clients(self) -> None:
         """Initialize API clients."""
         if "notion_openrouter_client" not in st.session_state:
@@ -1580,44 +1710,384 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
     async def _render_report_display(self) -> None:
         """Render the generated report display."""
         if st.session_state.get('notion_unified_report_content'):
-            st.markdown("---")
-            st.subheader("📊 Generated Enhanced Report")
+            st.markdown("#### 📊 **Generated Report**")
             
-            # Show report metrics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("📄 Report Length", f"{len(st.session_state.notion_unified_report_content)} chars")
-            with col2:
-                report_id = st.session_state.get('notion_current_report_id_for_chat', 'N/A')
-                st.metric("🆔 Report ID", report_id[:8] if report_id != 'N/A' else 'N/A')
-            with col3:
-                rag_available = "✅" if st.session_state.get('notion_current_report_id_for_chat') in st.session_state.get('notion_rag_contexts', {}) else "❌"
-                st.metric("🧠 RAG Context", rag_available)
-            
-            # Show Notion publication status
+            # Compact status display
             notion_url = st.session_state.get('notion_published_report_url')
             if notion_url:
-                st.success(f"🔗 **Published to Notion:** [View AI Deep Research Report]({notion_url})")
-                st.caption("The report has been automatically added as a child page to your Notion project")
+                username = st.session_state.get('username', 'Unknown User')
+                st.success(f"✅ **Published to Notion:** [AI Deep Research Report by {username}]({notion_url})")
             else:
-                auto_publish = st.session_state.get('notion_auto_publish_to_notion', True)
+                auto_publish = st.session_state.get('notion_auto_publish_to_notion', False)
                 if auto_publish:
-                    st.info("📁 Report saved locally • Auto-publish enabled for next run")
+                    st.info("📁 Local save • Auto-publish enabled")
                 else:
-                    st.info("📁 Report saved locally • Auto-publish disabled")
+                    st.info("📁 Local save only")
             
-            # Display report content
+            # Actions row
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                # Download button
+                st.download_button(
+                    label="📥 Download Report",
+                    data=st.session_state.notion_unified_report_content,
+                    file_name=f"enhanced_notion_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.md",
+                    mime="text/markdown",
+                    key="notion_download_report_btn"
+                )
+            with col2:
+                report_chars = len(st.session_state.notion_unified_report_content)
+                st.metric("Size", f"{report_chars:,} chars")
+            with col3:
+                rag_available = "✅" if st.session_state.get('notion_current_report_id_for_chat') in st.session_state.get('notion_rag_contexts', {}) else "❌"
+                st.metric("Chat Ready", rag_available)
+            
+            # Report preview
             with st.expander("📖 **View Full Report**", expanded=False):
                 st.markdown(st.session_state.notion_unified_report_content)
+
+    async def _render_scoring_results(self) -> None:
+        """Render scoring results display."""
+        # Check for scoring results
+        selected_pages = st.session_state.get('notion_selected_pages', [])
+        if not selected_pages:
+            return
+        
+        from pathlib import Path
+        import json
+        reports_dir = Path("reports")
+        
+        scoring_results = []
+        for page_id in selected_pages:
+            score_file = reports_dir / f"score_{page_id}.json"
+            if score_file.exists():
+                try:
+                    with open(score_file, 'r') as f:
+                        score_data = json.load(f)
+                    
+                    # Get page info
+                    available_pages = st.session_state.get('notion_available_pages', [])
+                    page_info = next((p for p in available_pages if p['id'] == page_id), {'title': f'Page {page_id[:8]}'})
+                    
+                    scoring_results.append({
+                        'page_id': page_id,
+                        'page_title': page_info['title'], 
+                        'score_data': score_data,
+                        'file_path': score_file,
+                        'file_size': score_file.stat().st_size
+                    })
+                except Exception as e:
+                    st.error(f"Error loading score for {page_id}: {e}")
+        
+        if scoring_results:
+            st.markdown("#### 📊 **Project Scoring Results**")
             
-            # Download button
-            st.download_button(
-                label="📥 Download Enhanced Report",
-                data=st.session_state.notion_unified_report_content,
-                file_name=f"enhanced_notion_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.md",
-                mime="text/markdown",
-                key="notion_download_report_btn"
+            # Publishing option for scoring
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                auto_publish_scoring = st.checkbox(
+                    "📤 Auto-publish scoring to Notion",
+                    value=st.session_state.get('notion_auto_publish_scoring', False),
+                    key="notion_auto_publish_scoring_checkbox",
+                    help="Create 'Project Scoring by [username]' child pages with results"
+                )
+                st.session_state.notion_auto_publish_scoring = auto_publish_scoring
+            
+            with col2:
+                st.metric("Score Files", len(scoring_results))
+            
+            # Display each scoring result
+            for result in scoring_results:
+                with st.expander(f"🎯 **{result['page_title']} - Scoring Results**", expanded=False):
+                    
+                    # Key metrics in columns
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    score_data = result['score_data']
+                    
+                    with col1:
+                        ido = score_data.get('IDO', 'N/A')
+                        color = "🟢" if ido == "Yes" else "🔴" if ido == "No" else "⚪"
+                        st.metric("IDO", f"{color} {ido}")
+                    
+                    with col2:
+                        investment = score_data.get('Investment', 'N/A') 
+                        color = "🟢" if investment == "Yes" else "🔴" if investment == "No" else "⚪"
+                        st.metric("Investment", f"{color} {investment}")
+                    
+                    with col3:
+                        advisory = score_data.get('Advisory', 'N/A')
+                        color = "🟢" if advisory == "Yes" else "🔴" if advisory == "No" else "⚪"
+                        st.metric("Advisory", f"{color} {advisory}")
+                    
+                    with col4:
+                        conviction = score_data.get('Conviction', 'N/A')
+                        st.metric("Conviction", conviction)
+                    
+                    # Show if this was a fallback/simplified scoring
+                    expected_fields = ['IDO_Q1_TeamLegit', 'LA_Q1_Runway', 'MaxValuation_IDO']
+                    has_detailed_fields = any(score_data.get(field) for field in expected_fields)
+                    if not has_detailed_fields:
+                        st.caption("🔄 Simplified scoring (detailed analysis failed)")
+                        
+                        # Debug: Show what fields are actually present
+                        if st.checkbox("🔍 Show debug info", key=f"debug_score_{result['page_id']}"):
+                            st.write("**Available fields in scoring data:**")
+                            for key, value in score_data.items():
+                                if value and value != 'N/A':
+                                    st.write(f"✅ `{key}`: {str(value)[:100]}...")
+                                else:
+                                    st.write(f"❌ `{key}`: {value}")
+                            
+                            st.write(f"**Total fields:** {len(score_data)}")
+                            st.write(f"**File size:** {result['file_size']} bytes")
+                    
+                    # Key insights
+                    st.markdown("**📝 Key Insights:**")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**🐂 Bull Case:**")
+                        st.info(score_data.get('BullCase', 'Not provided'))
+                    
+                    with col2:
+                        st.markdown("**🐻 Bear Case:**")
+                        st.warning(score_data.get('BearCase', 'Not provided'))
+                    
+                    # Rationales
+                    if score_data.get('IDO_Rationale'):
+                        st.markdown("**💡 IDO Rationale:**")
+                        st.write(score_data['IDO_Rationale'])
+                    
+                    if score_data.get('Investment_Rationale'):
+                        st.markdown("**💰 Investment Rationale:**")
+                        st.write(score_data['Investment_Rationale'])
+                    
+                    # Valuations
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if score_data.get('MaxValuation_IDO'):
+                            st.markdown("**💎 Max IDO Valuation:**")
+                            st.success(score_data['MaxValuation_IDO'])
+                    
+                    with col2:
+                        if score_data.get('MaxValuation_Investment'):
+                            st.markdown("**💼 Max Investment Valuation:**")
+                            st.success(score_data['MaxValuation_Investment'])
+                    
+                    # Comments and scope
+                    if score_data.get('ProposedScope'):
+                        st.markdown("**🎯 Proposed Scope:**")
+                        st.write(score_data['ProposedScope'])
+                    
+                    if score_data.get('Comments'):
+                        st.markdown("**💬 Comments:**")
+                        st.write(score_data['Comments'])
+                    
+                    # File info and download
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    with col1:
+                        # Download JSON
+                        with open(result['file_path'], 'r') as f:
+                            json_content = f.read()
+                        
+                        st.download_button(
+                            label="📥 Download Scoring JSON",
+                            data=json_content,
+                            file_name=f"scoring_{result['page_id']}.json",
+                            mime="application/json",
+                            key=f"download_score_{result['page_id']}"
+                        )
+                    
+                    with col2:
+                        st.metric("File Size", f"{result['file_size']:,} B")
+                    
+                    with col3:
+                        if auto_publish_scoring:
+                            if st.button(f"📤 Publish to Notion", key=f"publish_score_{result['page_id']}", type="primary"):
+                                await self._publish_scoring_to_notion(result['page_id'], result['score_data'])
+                        else:
+                            st.info("Enable auto-publish above to publish to Notion")
+
+    async def _publish_scoring_to_notion(self, page_id: str, score_data: dict) -> None:
+        """Publish scoring results to Notion as a child page."""
+        try:
+            from src.notion_writer import publish_report
+            from pathlib import Path
+            import tempfile
+            
+            # Create a markdown report from the scoring data
+            username = st.session_state.get('username', 'Unknown User')
+            
+            markdown_content = f"""# Project Scoring Report
+
+## Overall Recommendations
+
+- **IDO**: {score_data.get('IDO', 'N/A')} 
+- **Investment**: {score_data.get('Investment', 'N/A')}
+- **Advisory**: {score_data.get('Advisory', 'N/A')}
+- **Liquid Program**: {score_data.get('LiquidProgram', 'N/A')}
+
+## Investment Analysis
+
+### Bull Case
+{score_data.get('BullCase', 'Not provided')}
+
+### Bear Case  
+{score_data.get('BearCase', 'Not provided')}
+
+### Conviction
+**{score_data.get('Conviction', 'N/A')}**
+{score_data.get('Conviction_Rationale', '')}
+
+## Valuation
+
+### IDO Valuation
+- **Max Valuation**: {score_data.get('MaxValuation_IDO', 'Not specified')}
+- **Rationale**: {score_data.get('MaxValuation_IDO_Rationale', 'Not provided')}
+
+### Investment Valuation
+- **Max Valuation**: {score_data.get('MaxValuation_Investment', 'Not specified')}
+- **Rationale**: {score_data.get('MaxValuation_Investment_Rationale', 'Not provided')}
+
+## Recommendations
+
+### Proposed Scope
+{score_data.get('ProposedScope', 'Not specified')}
+
+### Comments
+{score_data.get('Comments', 'No additional comments')}
+
+### Disclosures
+{score_data.get('Disclosures', 'None specified')}
+
+---
+*Generated by AI Scoring System - {username}*
+"""
+            
+            # Save to temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as tmp_file:
+                tmp_file.write(markdown_content)
+                tmp_file_path = Path(tmp_file.name)
+            
+            try:
+                # Use a custom approach since publish_report doesn't support custom titles
+                # We'll create our own Notion page for scoring
+                notion_url = await self._create_scoring_notion_page(page_id, markdown_content, username)
+                
+                st.success(f"✅ Scoring published to Notion: [Project Scoring by {username}]({notion_url})")
+                
+            finally:
+                # Clean up temp file
+                tmp_file_path.unlink(missing_ok=True)
+                
+        except Exception as e:
+            st.error(f"Failed to publish scoring to Notion: {str(e)}")
+
+    async def _create_scoring_notion_page(self, page_id: str, markdown_content: str, username: str) -> str:
+        """Create a custom Notion page for scoring results."""
+        import os
+        import httpx
+        from notion_client import Client as NotionClient
+        from notion_client.errors import RequestTimeoutError, APIResponseError
+        from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
+        from typing import cast
+        
+        def _is_retryable(exc: Exception) -> bool:
+            if isinstance(exc, (RequestTimeoutError, httpx.TimeoutException)):
+                return True
+            if isinstance(exc, APIResponseError):
+                if exc.code in {"internal_server_error", "service_unavailable", "rate_limited"}:
+                    return True
+                status = getattr(exc, "status", 0) or 0
+                return isinstance(status, int) and (status == 429 or status // 100 == 5)
+            return False
+
+        def _tenacity() -> Retrying:
+            return Retrying(
+                wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+                stop=stop_after_attempt(3),
+                retry=retry_if_exception(_is_retryable),
+                reraise=True,
             )
+        
+        # Initialize Notion client
+        token = os.getenv("NOTION_TOKEN")
+        if not token:
+            raise RuntimeError("Environment variable NOTION_TOKEN is required.")
+        
+        timeout_cfg = httpx.Timeout(180.0, connect=10.0)
+        client = NotionClient(auth=token, client=httpx.Client(timeout=timeout_cfg))
+        
+        page_title = f"Project Scoring by {username}"
+        
+        # Convert markdown to simple blocks (paragraph blocks)
+        lines = markdown_content.split('\n')
+        blocks = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            if line.startswith('# '):
+                blocks.append({
+                    "type": "heading_1",
+                    "heading_1": {"rich_text": [{"type": "text", "text": {"content": line[2:]}}]},
+                })
+            elif line.startswith('## '):
+                blocks.append({
+                    "type": "heading_2", 
+                    "heading_2": {"rich_text": [{"type": "text", "text": {"content": line[3:]}}]},
+                })
+            elif line.startswith('### '):
+                blocks.append({
+                    "type": "heading_3",
+                    "heading_3": {"rich_text": [{"type": "text", "text": {"content": line[4:]}}]},
+                })
+            elif line.startswith('- '):
+                blocks.append({
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": line[2:]}}]},
+                })
+            else:
+                blocks.append({
+                    "type": "paragraph",
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": line}}]},
+                })
+        
+        # Create the page
+        first_batch = blocks[:100]  # Notion API limit
+        
+        for attempt in _tenacity():
+            with attempt:
+                new_page = client.pages.create(
+                    parent={"type": "page_id", "page_id": page_id},
+                    properties={
+                        "title": {
+                            "title": [
+                                {"type": "text", "text": {"content": page_title}}
+                            ]
+                        }
+                    },
+                    icon={"emoji": "📊"},
+                    children=first_batch,
+                )
+        
+        report_page_id = cast(str, new_page["id"])
+        report_url = cast(str, new_page["url"])
+        
+        # Append remaining blocks if any
+        remaining_blocks = blocks[100:]
+        if remaining_blocks:
+            # Split into chunks of 100
+            for i in range(0, len(remaining_blocks), 100):
+                batch = remaining_blocks[i:i+100]
+                for attempt in _tenacity():
+                    with attempt:
+                        client.blocks.children.append(block_id=report_page_id, children=batch)
+        
+        return report_url
 
     async def _render_admin_panel(self) -> None:
         """Render admin panel if user is admin."""

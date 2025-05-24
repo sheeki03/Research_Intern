@@ -14,6 +14,7 @@ from src.config import USERS_CONFIG_PATH, DEFAULT_PROMPTS, SYSTEM_PROMPT
 from src.audit_logger import get_audit_logger
 from src.pages.interactive_research import InteractiveResearchPage
 from src.pages.notion_automation import NotionAutomationPage
+from src.pages.research_lab import ResearchLabPage
 
 class AppController:
     """Main application controller for page routing and state management."""
@@ -21,7 +22,8 @@ class AppController:
     def __init__(self):
         self.pages = {
             "Interactive Research": InteractiveResearchPage(),
-            "Notion Automation": NotionAutomationPage()
+            "Notion Automation": NotionAutomationPage(),
+            "Research Lab": ResearchLabPage()
         }
         self.current_page = None
     

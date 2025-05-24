@@ -1,0 +1,88 @@
+{
+  "project_name": "STXN (Smart Transaction Corp)",
+  "valuation": 30000000,
+  "market_cap": 60000000,
+  "team_score": 8.5,
+  "technology_score": 7.8,
+  "market_analysis_score": 8.0,
+  "financials_score": 7.2,
+  "tokenomics_score": 6.5,
+  "risk_score": 7.0,
+  "overall_score": 7.5,
+  "team_details": {
+    "team_size": 11,
+    "key_members": [
+      {
+        "name": "Gian Marco",
+        "background": "Technical lead with experience at Nasdaq, Ethereum Foundation (account abstraction), and Ubisoft (NFT gaming)"
+      },
+      {
+        "name": "Boris Mamlyuk",
+        "background": "CEO and general counsel with crypto law expertise and former law professor"
+      }
+    ],
+    "expertise": "Strong technical and legal background; positive feedback from Impossible Finance research committee"
+  },
+  "technology_details": {
+    "core_tech": [
+      "Universal matching engine for cross-chain liquidity",
+      "AI-driven smart transactions",
+      "Cross-chain solver network"
+    ],
+    "product_ecosystem": [
+      "dApp store",
+      "decentralized backend",
+      "developer SDK (summer 2025 launch)"
+    ],
+    "partnerships": [
+      "Consensys research partnership",
+      "MetaMask integration (99% inclusion rate)",
+      "Potential Trust Wallet integration"
+    ]
+  },
+  "market_analysis": {
+    "target_users": [
+      "Crypto-curious Web2 users",
+      "Developers seeking cross-chain distribution tools"
+    ],
+    "competitive_advantage": "Early MetaMask integration, AI-driven transactions, and strategic partnerships",
+    "market_opportunity": "Growing demand for cross-chain infrastructure in DeFi V2"
+  },
+  "financials": {
+    "burn_rate": 250000,
+    "funding_round": {
+      "current_round": 3000000,
+      "valuation": 30000000,
+      "type": "seed extension"
+    },
+    "revenue_streams": [
+      "Pilot app revenue (CleanApp, Vamp.Fun) starting July 2025",
+      "Transaction fees in STXN token",
+      "Stablecoin yield partnerships"
+    ]
+  },
+  "tokenomics": {
+    "utility": [
+      "Transaction fees for cross-chain routing",
+      "Liquidity locking for TVL growth"
+    ],
+    "gaps": [
+      "No detailed mint/burn mechanisms",
+      "Unclear value accrual models",
+      "Dependence on user lock-in for adoption"
+    ]
+  },
+  "risks": {
+    "key_risks": [
+      "Regulatory scrutiny for stablecoin integrations",
+      "Execution risk due to reliance on partnerships",
+      "Token adoption uncertainty without clear utility"
+    ],
+    "mitigation": [
+      "Leverage MetaMask/Consensys credibility",
+      "Boris Mamlyuk's legal expertise",
+      "Decentralization via node sales (if applicable)"
+    ]
+  },
+  "recommendation": "Strong team and partnerships with high growth potential, but requires clarification on tokenomics and revenue projections. Caution advised due to regulatory and adoption risks."
+}

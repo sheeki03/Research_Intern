@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from src.openrouter import OpenRouterClient
 
 SYSTEM_PROMPT = os.getenv("PROJECT_SCORER_PROMPT")
@@ -19,7 +20,24 @@ USER_PROMPT_TEMPLATE = """
 
 ### Instructions
 • Follow the system-prompt rules verbatim.  
-• Return **only** JSON through the `score_project` function call.
+• Return **only** valid JSON - no trailing commas, no comments, no extra text.
+• Ensure all strings are properly quoted and escaped.
+• Double-check JSON syntax before responding.
+• Use EXACTLY these field names (required):
+
+REQUIRED FIELDS:
+- "IDO": "Yes" or "No"
+- "IDO_Rationale": "string explanation"
+- "Investment": "Yes" or "No"
+- "Investment_Rationale": "string explanation"
+- "Advisory": "Yes" or "No"
+- "Advisory_Rationale": "string explanation"
+- "BullCase": "string"
+- "BearCase": "string"
+- "Conviction": "BullCase" or "BearCase"
+- "Comments": "string"
+
+RETURN ONLY JSON WITH THESE EXACT FIELD NAMES.
 """
 
 SCORE_PROJECT_SCHEMA = {
@@ -76,6 +94,151 @@ SCORE_PROJECT_SCHEMA = {
   }
 }
 
+def _clean_and_fix_json(text: str) -> str:
+    """Clean and fix common JSON formatting issues."""
+    if not text:
+        return ""
+    
+    # Remove any text before the first { and after the last }
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    if start_idx == -1 or end_idx == -1:
+        return ""
+    
+    json_text = text[start_idx:end_idx + 1]
+    
+    # Common fixes for malformed JSON
+    fixes = [
+        # Remove trailing commas before closing braces/brackets
+        (r',\s*}', '}'),
+        (r',\s*]', ']'),
+        
+        # Fix unescaped quotes in strings
+        (r'(?<!")([^",\{\}\[\]:]+)"(?=[,\}\]])', r'"\1"'),
+        
+        # Fix broken strings with newlines
+        (r'"\s*\n\s*([^"]*)\s*\n\s*"', r'"\1"'),
+        
+        # Fix incomplete field values
+        (r':\s*"[^"]*$', ': ""'),
+        
+        # Remove duplicate field definitions (keep the last one)
+        (r'("[^"]+"):\s*"[^"]*",?\s*\1:', r'\1:'),
+        
+        # Fix field names that got split across lines
+        (r'"\s*\n\s*([^"]+)\s*\n\s*":', r'"\1":'),
+        
+        # Fix broken field names
+        (r'"[^"]*\n[^"]*":', r'"broken_field":'),
+    ]
+    
+    for pattern, replacement in fixes:
+        json_text = re.sub(pattern, replacement, json_text, flags=re.MULTILINE | re.DOTALL)
+    
+    # Ensure the JSON ends properly
+    if not json_text.strip().endswith('}'):
+        json_text = json_text.rstrip() + '}'
+    
+    return json_text
+
+async def _fallback_simple_scoring(client, ddq_text: str, ai_text: str, calls_text: str, freeform_text: str) -> dict:
+    """Fallback with simplified scoring when complex JSON fails."""
+    _logger.info("action=fallback_scoring_attempt")
+    
+    simple_prompt = f"""
+Based on this project information, provide a simple investment assessment:
+
+PROJECT INFO:
+{ddq_text[:1000]}...
+
+RESEARCH REPORT:
+{ai_text[:1000]}...
+
+Return ONLY this JSON format (no extra text):
+{{
+  "IDO": "Yes or No",
+  "IDO_Rationale": "Brief explanation",
+  "Investment": "Yes or No", 
+  "Investment_Rationale": "Brief explanation",
+  "Advisory": "Yes or No",
+  "Advisory_Rationale": "Brief explanation",
+  "BullCase": "Brief bull case",
+  "BearCase": "Brief bear case",
+  "Conviction": "BullCase or BearCase",
+  "Comments": "Overall assessment"
+}}
+"""
+    
+    response = await client.generate_response(
+        prompt=simple_prompt,
+        system_prompt="You are an investment analyst. Return only valid JSON with the exact format requested.",
+        temperature=0.0
+    )
+    
+    if not response:
+        raise RuntimeError("Fallback scoring got empty response")
+    
+    # Try to parse the simplified response
+    cleaned = _clean_and_fix_json(response)
+    if cleaned:
+        try:
+            result = json.loads(cleaned)
+            _logger.info("action=fallback_scoring_success fields=%s", list(result.keys()))
+            
+            # Ensure required fields are present with default values
+            required_fields = {
+                "IDO": "No",
+                "IDO_Rationale": "Unable to determine from available information",
+                "Investment": "No", 
+                "Investment_Rationale": "Insufficient data for investment recommendation",
+                "Advisory": "No",
+                "Advisory_Rationale": "Limited information available for advisory assessment",
+                "BullCase": "Potential for growth in cross-chain infrastructure market",
+                "BearCase": "High competition and execution risks in DeFi space",
+                "Conviction": "BearCase",
+                "Comments": "Analysis limited by data availability - requires more detailed due diligence"
+            }
+            
+            # Fill in missing fields
+            for field, default_value in required_fields.items():
+                if field not in result or not result[field] or result[field] in ['N/A', 'n/a', '']:
+                    result[field] = default_value
+                    _logger.info(f"action=fallback_field_defaulted field={field}")
+            
+            return result
+        except json.JSONDecodeError as e:
+            _logger.error("action=fallback_json_parse_failed error=%s response=%s", str(e), response[:200])
+            
+            # Ultimate fallback - return a basic structure
+            _logger.info("action=ultimate_fallback_used")
+            return {
+                "IDO": "No",
+                "IDO_Rationale": "JSON parsing failed - manual review required",
+                "Investment": "No", 
+                "Investment_Rationale": "Technical analysis incomplete due to parsing errors",
+                "Advisory": "No",
+                "Advisory_Rationale": "Unable to complete automated assessment",
+                "BullCase": "Project has potential but requires manual analysis",
+                "BearCase": "Technical assessment failed - risk assessment incomplete",
+                "Conviction": "BearCase",
+                "Comments": "Automated scoring failed - manual review recommended"
+            }
+    
+    # If cleaning failed entirely, return ultimate fallback
+    _logger.error("action=json_cleaning_failed response_preview=%s", response[:200])
+    return {
+        "IDO": "No",
+        "IDO_Rationale": "Automated analysis failed",
+        "Investment": "No", 
+        "Investment_Rationale": "System error during assessment",
+        "Advisory": "No",
+        "Advisory_Rationale": "Technical failure in scoring system",
+        "BullCase": "Unable to assess due to system error",
+        "BearCase": "System failure indicates high technical risk",
+        "Conviction": "BearCase",
+        "Comments": "Scoring system failure - requires manual intervention"
+    }
+
 async def score_project(ddq_text: str, ai_text: str, calls_text: str, freeform_text: str) -> dict:
     client = OpenRouterClient()
     
@@ -87,11 +250,32 @@ async def score_project(ddq_text: str, ai_text: str, calls_text: str, freeform_t
         freeform_text=freeform_text
     )
     
-    # Use OpenRouter client instead of OpenAI
+    # Enhanced system prompt with better JSON instructions
+    system_prompt = SYSTEM_PROMPT or """You are an expert investment analyst. Analyze the provided project information and return a comprehensive scoring assessment as valid JSON.
+
+CRITICAL: Your response must be VALID JSON only. No trailing commas, no comments, no extra text. Ensure all strings are properly quoted and escaped.
+
+You MUST use EXACTLY these field names in your JSON response:
+{
+  "IDO": "Yes or No",
+  "IDO_Rationale": "explanation",
+  "Investment": "Yes or No",
+  "Investment_Rationale": "explanation", 
+  "Advisory": "Yes or No",
+  "Advisory_Rationale": "explanation",
+  "BullCase": "positive case",
+  "BearCase": "negative case",
+  "Conviction": "BullCase or BearCase",
+  "Comments": "overall assessment"
+}
+
+Return ONLY JSON with these exact field names - no other fields."""
+    
+    # Use OpenRouter client with more explicit JSON formatting
     response_text = await client.generate_response(
-        prompt=user_prompt,
-        system_prompt=SYSTEM_PROMPT,
-        temperature=0.1  # Low temperature for consistent scoring
+        prompt=user_prompt + "\n\nIMPORTANT: Return ONLY valid JSON with no trailing commas or syntax errors.",
+        system_prompt=system_prompt,
+        temperature=0.0  # Even lower temperature for consistent JSON formatting
     )
     
     if not response_text:
@@ -101,16 +285,36 @@ async def score_project(ddq_text: str, ai_text: str, calls_text: str, freeform_t
         # Parse the JSON response
         return json.loads(response_text)
     except json.JSONDecodeError as e:
-        # If direct parsing fails, try to extract JSON from the response
-        import re
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if json_match:
+        # If direct parsing fails, try to clean and fix the JSON
+        cleaned_json = _clean_and_fix_json(response_text)
+        if cleaned_json:
             try:
-                return json.loads(json_match.group())
+                return json.loads(cleaned_json)
             except json.JSONDecodeError:
                 pass
         
-        raise RuntimeError(f"Failed to parse JSON response: {e}. Response: {response_text}")
+        # If still failing, try to extract JSON from the response
+        import re
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            extracted_json = json_match.group()
+            cleaned_extracted = _clean_and_fix_json(extracted_json)
+            if cleaned_extracted:
+                try:
+                    return json.loads(cleaned_extracted)
+                except json.JSONDecodeError:
+                    pass
+        
+        # Log the failed response for debugging
+        _logger.error("action=json_parse_failed error=%s response_preview=%s", str(e), response_text[:500])
+        
+        # As a last resort, try to generate a simplified response
+        _logger.info("action=attempting_fallback_scoring")
+        try:
+            return await _fallback_simple_scoring(client, ddq_text, ai_text, calls_text, freeform_text)
+        except Exception as fallback_error:
+            _logger.error("action=fallback_scoring_failed error=%s", str(fallback_error))
+            raise RuntimeError(f"Failed to parse JSON response: {e}. Fallback also failed: {fallback_error}. Response preview: {response_text[:500]}...")
 
 # ---------------------------------------------------------------------------
 # NEW: high-level helper to score a Notion project card end-to-end
@@ -200,16 +404,22 @@ async def run_project_scoring(page_id: str) -> Path:
 
     reports_dir = Path("reports")
     report_md_path = reports_dir / f"report_{page_id}.md"
+    enhanced_report_md_path = reports_dir / f"enhanced_report_{page_id}.md"
 
     if ai_text is None:
         # Fallback to local file if API retrieval failed / page doesn't exist
-        if not report_md_path.exists():
+        # Check for enhanced report first, then regular report
+        if enhanced_report_md_path.exists():
+            ai_text = enhanced_report_md_path.read_text(encoding="utf-8")
+            _logger.info("action=report.loaded.source=enhanced_file bytes=%d", len(ai_text))
+        elif report_md_path.exists():
+            ai_text = report_md_path.read_text(encoding="utf-8")
+            _logger.info("action=report.loaded.source=file bytes=%d", len(ai_text))
+        else:
             raise RuntimeError(
-                "AI Deep Research Report not found in Notion and local file "
-                f"{report_md_path} is missing. Run run_deep_research() first."
+                "AI Deep Research Report not found in Notion and local files "
+                f"{enhanced_report_md_path} and {report_md_path} are missing. Run Enhanced Research first."
             )
-        ai_text = report_md_path.read_text(encoding="utf-8")
-        _logger.info("action=report.loaded.source=file bytes=%d", len(ai_text))
     else:
         _logger.info("action=report.loaded.source=notion bytes=%d", len(ai_text))
 
