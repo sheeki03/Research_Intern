@@ -33,12 +33,13 @@ OPENROUTER_PRIMARY_MODEL = os.getenv("OPENROUTER_PRIMARY_MODEL", "qwen/qwen3-30b
 # Standard AI Model Options for both Interactive Research and Notion Automation
 # Based on original Interactive Research models + GPT-4o Mini
 AI_MODEL_OPTIONS = {
-    "qwen/qwen3-30b-a3b:free": "Qwen3 30B (Free) - Fast and efficient",
+    "qwen/qwen3-30b-a3b:free": "Qwen: Qwen3 30B",
+    "qwen/qwen3-235b-a22b:free": "Qwen: Qwen3 235B",
     "google/gemini-2.5-pro-preview": "Google Gemini 2.5 Pro - Advanced multimodal",
     "openai/o3": "OpenAI o3 - Latest frontier model",
     "openai/gpt-4.1": "OpenAI GPT-4.1 - Enhanced capabilities",
     "openai/gpt-4o-mini": "GPT-4o Mini - Cost-effective and fast",
-    "anthropic/claude-3.7-sonnet:thinking": "Claude 3.7 Sonnet (Thinking) - Advanced reasoning",
+    "anthropic/claude-sonnet-4": "Claude Sonnet 4",
     "tngtech/deepseek-r1t-chimera:free": "DeepSeek R1T Chimera (Free) - Research focused"
 }
 

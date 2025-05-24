@@ -134,17 +134,64 @@ class ResearchLabPage(BasePage):
         # Show page header with enhanced features badge
         self.show_page_header("🧪 Advanced Research Lab - Enhanced Features & FastAPI Integration")
         
+        # Custom CSS to make tab and expander text bigger
+        st.markdown("""
+        <style>
+        /* Make tab text much bigger */
+        .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+            font-size: 24px !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Make expander headers much bigger */
+        .streamlit-expander .streamlit-expanderHeader p {
+            font-size: 20px !important;
+            font-weight: 600 !important;
+        }
+        
+        /* Make radio button text bigger */
+        .stRadio > label > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 18px !important;
+        }
+        
+        /* Make checkbox text bigger */
+        .stCheckbox > label > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 18px !important;
+        }
+        
+        /* Make selectbox text bigger */
+        .stSelectbox > label > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 18px !important;
+        }
+        
+        /* Make text input labels bigger */
+        .stTextInput > label > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 18px !important;
+        }
+        
+        /* Make text area labels bigger */
+        .stTextArea > label > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 18px !important;
+        }
+        
+        /* Make number input labels bigger */
+        .stNumberInput > label > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 18px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         # Check environment variables
         if not self._check_environment():
             return
         
         # Enhanced Feature Tabs
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "🔬 **Multi-Step Research**", 
-            "📋 **Notion Integration**", 
-            "💬 **Enhanced Chat**", 
-            "🚀 **Research Pipeline**",
-            "🔧 **Admin & API**"
+            "## 🔬 **Multi-Step Research**", 
+            "## 📋 **Notion Integration**", 
+            "## 💬 **Enhanced Chat**", 
+            "## 🚀 **Research Pipeline**",
+            "## 🔧 **Admin & API**"
         ])
         
         with tab1:
@@ -462,7 +509,7 @@ etc.
             st.success("✅ All questions completed!")
             
             # Show summary
-            with st.expander("📋 **Question Summary**", expanded=True):
+            with st.expander("# 📋 **Question Summary**", expanded=True):
                 for i, (q, a) in enumerate(zip(questions, answers)):
                     st.markdown(f"**Q{i+1}:** {q}")
                     st.markdown(f"**A{i+1}:** {a or '_Skipped_'}")
@@ -608,7 +655,7 @@ Format as a comprehensive markdown report with clear sections and bullet points.
             st.metric("🕐 Generated", time_str)
         
         # Enhanced Query Summary
-        with st.expander("🎯 **Enhanced Query Used**", expanded=False):
+        with st.expander("# 🎯 **Enhanced Query Used**", expanded=False):
             st.markdown(results.get('enhanced_query', 'No query available'))
         
         # Report Content
@@ -616,7 +663,7 @@ Format as a comprehensive markdown report with clear sections and bullet points.
         report_content = results.get('report_content', '')
         
         if report_content:
-            with st.expander("📖 **View Full Report**", expanded=True):
+            with st.expander("# 📖 **View Full Report**", expanded=True):
                 st.markdown(report_content)
             
             # Download button
@@ -1076,7 +1123,8 @@ Available Endpoints:
         # Basic model selection
         model_options = [
             'qwen/qwen3-30b-a3b:free',
-            'anthropic/claude-3-haiku',
+            'qwen/qwen3-235b-a22b:free',
+            'anthropic/claude-sonnet-4',
             'openai/gpt-4-turbo',
             'mistralai/mistral-7b-instruct:free'
         ]

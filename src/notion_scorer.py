@@ -141,6 +141,46 @@ def _clean_and_fix_json(text: str) -> str:
     
     return json_text
 
+def _transform_wrong_format(data: dict) -> dict:
+    """Transform incorrectly formatted scoring data to expected format."""
+    _logger.info("action=transforming_format available_keys=%s", list(data.keys()))
+    
+    # Try to extract meaningful information from wrong format and map to correct format
+    result = {
+        "IDO": "No",
+        "IDO_Rationale": "Unable to determine from available data",
+        "Investment": "No", 
+        "Investment_Rationale": "Insufficient structured data for recommendation",
+        "Advisory": "No",
+        "Advisory_Rationale": "Data format mismatch - manual review needed",
+        "BullCase": "Project shows potential based on available information",
+        "BearCase": "Analysis incomplete due to data format issues",
+        "Conviction": "BearCase",
+        "Comments": "Original analysis used non-standard format - manual review recommended"
+    }
+    
+    # Try to extract useful information from the wrong format
+    if "overall_score" in data:
+        score = data.get("overall_score", 0)
+        if isinstance(score, (int, float)) and score > 7.5:
+            result["Investment"] = "Yes"
+            result["Investment_Rationale"] = f"High overall score of {score}/10 indicates strong potential"
+            result["BullCase"] = f"Project scored {score}/10 in comprehensive analysis"
+            result["Conviction"] = "BullCase"
+    
+    if "recommendation" in data:
+        rec = str(data.get("recommendation", "")).lower()
+        if "invest" in rec or "recommend" in rec or "positive" in rec:
+            result["Investment"] = "Yes"
+            result["Investment_Rationale"] = f"Positive recommendation: {data['recommendation']}"
+    
+    # Extract project name if available
+    if "project_name" in data:
+        result["Comments"] = f"Analysis for {data['project_name']} - format transformation applied"
+    
+    _logger.info("action=format_transformation_complete")
+    return result
+
 async def _fallback_simple_scoring(client, ddq_text: str, ai_text: str, calls_text: str, freeform_text: str) -> dict:
     """Fallback with simplified scoring when complex JSON fails."""
     _logger.info("action=fallback_scoring_attempt")
@@ -283,7 +323,15 @@ Return ONLY JSON with these exact field names - no other fields."""
     
     try:
         # Parse the JSON response
-        return json.loads(response_text)
+        result = json.loads(response_text)
+        
+        # Check if result has the expected format, if not try to transform it
+        expected_fields = {'IDO', 'Investment', 'Advisory', 'BullCase', 'BearCase'}
+        if not any(field in result for field in expected_fields):
+            _logger.info("action=attempting_format_transformation")
+            result = _transform_wrong_format(result)
+        
+        return result
     except json.JSONDecodeError as e:
         # If direct parsing fails, try to clean and fix the JSON
         cleaned_json = _clean_and_fix_json(response_text)
