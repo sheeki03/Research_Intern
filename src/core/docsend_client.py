@@ -59,7 +59,7 @@ class DocSendClient:
             return 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
     
     def _init_chrome(self):
-        """Initialize Chrome browser with enhanced stealth capabilities."""
+        """Initialize Chrome browser with enhanced stealth capabilities and container support."""
         try:
             chrome_options = ChromeOptions()
             chrome_options.add_argument("--headless=new")
@@ -67,26 +67,30 @@ class DocSendClient:
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument('--log-level=3')
-            chrome_options.add_argument("--window-size=1920,1080")  # More realistic window size
+            chrome_options.add_argument("--window-size=1920,1080")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            
+            # Container-specific arguments
+            chrome_options.add_argument("--disable-software-rasterizer")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
+            chrome_options.add_argument("--disable-features=TranslateUI")
+            chrome_options.add_argument("--disable-ipc-flooding-protection")
+            chrome_options.add_argument("--remote-debugging-port=9222")
             
             # Enhanced stealth arguments to avoid bot detection
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             chrome_options.add_argument("--disable-web-security")
             chrome_options.add_argument("--allow-running-insecure-content")
-            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-            chrome_options.add_argument("--disable-ipc-flooding-protection")
-            chrome_options.add_argument("--disable-renderer-backgrounding")
-            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
             chrome_options.add_argument("--disable-client-side-phishing-detection")
             chrome_options.add_argument("--disable-sync")
             chrome_options.add_argument("--metrics-recording-only")
             chrome_options.add_argument("--no-first-run")
             chrome_options.add_argument("--safebrowsing-disable-auto-update")
-            chrome_options.add_argument("--enable-automation")  # Paradoxically, this can help
             chrome_options.add_argument("--password-store=basic")
             chrome_options.add_argument("--use-mock-keychain")
             
@@ -107,8 +111,51 @@ class DocSendClient:
             }
             chrome_options.add_experimental_option("prefs", prefs)
             
-            service = ChromeService(ChromeDriverManager().install())
-            browser = webdriver.Chrome(service=service, options=chrome_options)
+            # Set Chrome/Chromium binary path if available in environment or system
+            chrome_bin = os.environ.get('CHROME_BIN')
+            if chrome_bin and os.path.exists(chrome_bin):
+                chrome_options.binary_location = chrome_bin
+                print(f"Using Chrome binary from environment: {chrome_bin}")
+            else:
+                # Try to find Chrome or Chromium binary
+                import shutil
+                for binary in ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']:
+                    binary_path = shutil.which(binary)
+                    if binary_path:
+                        chrome_options.binary_location = binary_path
+                        print(f"Found Chrome/Chromium binary: {binary_path}")
+                        break
+            
+            # Try to use system chromedriver first, then fallback to ChromeDriverManager
+            service = None
+            try:
+                # Check for system chromedriver from environment or PATH
+                chromedriver_path = os.environ.get('CHROMEDRIVER_PATH')
+                if chromedriver_path and os.path.exists(chromedriver_path):
+                    service = ChromeService(chromedriver_path)
+                    print(f"Using chromedriver from environment: {chromedriver_path}")
+                else:
+                    # Try system chromedriver in PATH
+                    import shutil
+                    system_driver = shutil.which('chromedriver')
+                    if system_driver:
+                        service = ChromeService(system_driver)
+                        print(f"Using system chromedriver: {system_driver}")
+                    else:
+                        service = ChromeService()
+                        print("Using default chromedriver service")
+                
+                browser = webdriver.Chrome(service=service, options=chrome_options)
+                print("✅ Chrome/Chromium browser initialized successfully")
+            except Exception as e:
+                # Fallback to ChromeDriverManager
+                print(f"System chromedriver failed ({str(e)}), using ChromeDriverManager...")
+                try:
+                    service = ChromeService(ChromeDriverManager().install())
+                    browser = webdriver.Chrome(service=service, options=chrome_options)
+                    print("✅ Using ChromeDriverManager chromedriver")
+                except Exception as e2:
+                    raise WebDriverException(f"Both system and managed chromedriver failed. System: {str(e)}, Managed: {str(e2)}")
             
             # Execute JavaScript to remove webdriver property and add human-like properties
             browser.execute_script("""
@@ -125,13 +172,15 @@ class DocSendClient:
                     get: () => [1, 2, 3, 4, 5],
                 });
                 
-                // Override the permissions API
-                const originalQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = (parameters) => (
-                    parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                );
+                // Override the permissions API if it exists
+                if (window.navigator.permissions && window.navigator.permissions.query) {
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+                }
                 
                 // Add realistic screen properties
                 Object.defineProperty(screen, 'availWidth', {
@@ -181,71 +230,102 @@ class DocSendClient:
             raise WebDriverException(f"Failed to initialize Edge: {str(e)}")
     
     def _detect_available_browsers(self) -> list:
-        """Detect which browsers are available on the system."""
+        """Detect which browsers are available on the system without initializing them."""
         available = []
         
-        # Test Chrome
+        # Check for Chrome/Chromium binary
         try:
-            self._init_chrome().quit()
-            available.append('chrome')
+            import shutil
+            chrome_binaries = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']
+            if any(shutil.which(binary) for binary in chrome_binaries):
+                available.append('chrome')
         except:
             pass
         
-        # Test Firefox
+        # Check for Firefox binary
         try:
-            self._init_firefox().quit()
-            available.append('firefox')
+            import shutil
+            if shutil.which('firefox') or shutil.which('firefox-esr'):
+                available.append('firefox')
         except:
             pass
         
-        # Test Edge (mainly for Windows, but Edge is available on other platforms too)
+        # Check for Edge binary (less common in containers)
         try:
-            self._init_edge().quit()
-            available.append('edge')
+            import shutil
+            if shutil.which('microsoft-edge') or shutil.which('msedge'):
+                available.append('edge')
         except:
             pass
         
         return available
     
     def _init_browser(self):
-        """Initialize and return a configured browser instance with fallback support."""
-        browsers_to_try = []
+        """Initialize and return a configured browser instance with robust fallback support."""
+        # Prioritize Chrome for container environments
+        browsers_to_try = ['chrome']  # Start with Chrome only for better reliability
         
-        if self.preferred_browser == 'auto':
-            # Auto-detect: try Chrome first, then Firefox, then Edge
-            browsers_to_try = ['chrome', 'firefox', 'edge']
-        elif self.preferred_browser in ['chrome', 'firefox', 'edge']:
-            # Try preferred browser first, then fallback to others
-            browsers_to_try = [self.preferred_browser]
-            other_browsers = [b for b in ['chrome', 'firefox', 'edge'] if b != self.preferred_browser]
-            browsers_to_try.extend(other_browsers)
-        else:
-            # Invalid preference, use auto-detection
-            browsers_to_try = ['chrome', 'firefox', 'edge']
+        # Only add other browsers if specifically requested or Chrome fails
+        if self.preferred_browser == 'firefox':
+            browsers_to_try = ['firefox', 'chrome']
+        elif self.preferred_browser == 'edge':
+            browsers_to_try = ['edge', 'chrome']
+        elif self.preferred_browser == 'auto':
+            # For auto mode, try Chrome first, then others if available
+            available_browsers = self._detect_available_browsers()
+            if 'chrome' in available_browsers:
+                browsers_to_try = ['chrome']
+            else:
+                browsers_to_try = available_browsers
         
         last_error = None
+        initialization_attempts = []
         
         for browser in browsers_to_try:
             try:
+                print(f"Attempting to initialize {browser} browser...")
                 if browser == 'chrome':
-                    return self._init_chrome()
+                    browser_instance = self._init_chrome()
+                    print(f"✅ Successfully initialized Chrome browser")
+                    return browser_instance
                 elif browser == 'firefox':
-                    return self._init_firefox()
+                    browser_instance = self._init_firefox()
+                    print(f"✅ Successfully initialized Firefox browser")
+                    return browser_instance
                 elif browser == 'edge':
-                    return self._init_edge()
+                    browser_instance = self._init_edge()
+                    print(f"✅ Successfully initialized Edge browser")
+                    return browser_instance
             except Exception as e:
                 last_error = e
-                print(f"Failed to initialize {browser}: {str(e)}")
+                error_msg = str(e)
+                initialization_attempts.append(f"{browser}: {error_msg}")
+                print(f"❌ Failed to initialize {browser}: {error_msg}")
                 continue
         
-        # If we get here, no browser worked
+        # If we get here, no browser worked - provide detailed error information
         available_browsers = self._detect_available_browsers()
-        if available_browsers:
-            error_msg = f"Failed to initialize any browser. Available browsers detected: {', '.join(available_browsers)}. Last error: {str(last_error)}"
-        else:
-            error_msg = f"No supported browsers found. Please install Chrome, Firefox, or Edge. Last error: {str(last_error)}"
         
-        raise WebDriverException(error_msg)
+        # Create comprehensive error message
+        error_details = []
+        error_details.append(f"Failed to initialize any browser after trying: {', '.join(browsers_to_try)}")
+        error_details.append(f"Available browser binaries detected: {', '.join(available_browsers) if available_browsers else 'None'}")
+        error_details.append("Initialization attempts:")
+        for attempt in initialization_attempts:
+            error_details.append(f"  - {attempt}")
+        
+        if not available_browsers:
+            error_details.append("\n🔧 SOLUTION: Install Chrome in your container:")
+            error_details.append("  - Add to Dockerfile: RUN apt-get update && apt-get install -y google-chrome-stable")
+            error_details.append("  - Or use a base image with Chrome pre-installed")
+        else:
+            error_details.append(f"\n🔧 SOLUTION: Check WebDriver setup for {available_browsers[0]}:")
+            error_details.append("  - Ensure proper permissions on driver executables")
+            error_details.append("  - Check for missing shared libraries")
+            error_details.append("  - Verify container has necessary dependencies")
+        
+        final_error_msg = "\n".join(error_details)
+        raise WebDriverException(final_error_msg)
     
     def _perform_ocr_on_image(self, image_data: bytes, filename: str = "") -> str:
         """Perform OCR on an image and return the extracted text."""

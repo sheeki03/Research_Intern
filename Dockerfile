@@ -39,12 +39,20 @@ RUN apt-get update && apt-get install -y \
     firefox-esr \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome for Selenium
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
+# Install Chrome for Selenium with proper dependencies (architecture-aware)
+RUN apt-get update && \
+    # Install Chromium as a fallback for ARM64 or if Chrome fails
+    apt-get install -y chromium chromium-driver \
+    # Install additional Chrome/Chromium dependencies for containers
+    && apt-get install -y \
+        libxss1 \
+        libappindicator1 \
+        xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Chrome/Chromium binary location for Selenium
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
