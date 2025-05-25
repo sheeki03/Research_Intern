@@ -42,55 +42,96 @@ class Scraper(ABC):
 
 
 class PlaywrightScraper:
-    """Playwright-based scraper implementation."""
+    """Playwright-based scraper implementation with multi-browser support."""
 
     def __init__(
         self,
         headless: bool = True,
-        browser_type: str = "chromium",
+        browser_type: str = "auto",
         user_agent: Optional[str] = None,
         timeout: int = 6000,
     ):
         self.headless = headless
-        self.browser_type = browser_type
+        self.preferred_browser_type = browser_type
         self.user_agent = user_agent
         self.timeout = timeout
         self.browser = None
         self.context = None
+        self.browser_type = None  # Will be set during initialization
 
     async def setup(self):
-        """Initialize Playwright browser and context."""
+        """Initialize Playwright browser and context with fallback support."""
 
         self.playwright = await async_playwright().start()
 
-        browser_method = getattr(self.playwright, self.browser_type)
+        # Determine browsers to try
+        browsers_to_try = []
+        
+        if self.preferred_browser_type == 'auto':
+            # Auto-detect: try chromium first, then firefox, then webkit
+            browsers_to_try = ['chromium', 'firefox', 'webkit']
+        elif self.preferred_browser_type in ['chromium', 'firefox', 'webkit']:
+            # Try preferred browser first, then fallback to others
+            browsers_to_try = [self.preferred_browser_type]
+            other_browsers = [b for b in ['chromium', 'firefox', 'webkit'] if b != self.preferred_browser_type]
+            browsers_to_try.extend(other_browsers)
+        else:
+            # Invalid preference, use auto-detection
+            browsers_to_try = ['chromium', 'firefox', 'webkit']
+        
+        last_error = None
+        
+        for browser_type in browsers_to_try:
+            try:
+                browser_method = getattr(self.playwright, browser_type)
+                
+                # Browser-specific arguments
+                args = [
+                    "--no-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-window-activation",
+                    "--disable-focus-on-load",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--no-startup-window",
+                    "--window-position=0,0",
+                    "--disable-notifications",
+                    "--disable-extensions",
+                    "--mute-audio",
+                ]
+                
+                # WebKit doesn't support all Chromium args
+                if browser_type == 'webkit':
+                    args = [
+                        "--no-sandbox",
+                        "--disable-notifications",
+                    ]
 
-        self.browser = await browser_method.launch(
-            headless=self.headless,
-            # Anti-detection measures
-            args=[
-                "--no-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-infobars",
-                "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                "--disable-window-activation",
-                "--disable-focus-on-load",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--no-startup-window",
-                "--window-position=0,0",
-                "--disable-notifications",
-                "--disable-extensions",
-                "--mute-audio",
-            ],
-        )
-        self.context = await self.setup_context(self.browser)
-
-        logger.info(
-            f"Playwright {self.browser_type} browser initialized in {'headless' if self.headless else 'headed'} mode"
-        )
+                self.browser = await browser_method.launch(
+                    headless=self.headless,
+                    args=args,
+                )
+                
+                self.context = await self.setup_context(self.browser)
+                self.browser_type = browser_type  # Set the actual browser type used
+                
+                logger.info(
+                    f"Playwright {browser_type} browser initialized in {'headless' if self.headless else 'headed'} mode"
+                )
+                return  # Success, exit the loop
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Failed to initialize {browser_type}: {str(e)}")
+                continue
+        
+        # If we get here, no browser worked
+        error_msg = f"No supported browsers found. Please install Chromium, Firefox, or WebKit. Last error: {str(last_error)}"
+        raise Exception(error_msg)
 
     async def setup_context(self, browser: Browser) -> BrowserContext:
         """

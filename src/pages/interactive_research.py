@@ -419,6 +419,140 @@ class InteractiveResearchPage(BasePage):
         
         return crawl_url, crawl_limit
     
+    async def _render_docsend_section(self) -> None:
+        """Render the DocSend deck processing section."""
+        st.subheader("5. DocSend Presentation Decks (Optional)")
+        st.write("Extract text from DocSend presentation slides using OCR")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            docsend_url = st.text_input(
+                "DocSend URL:",
+                key="docsend_url",
+                placeholder="https://docsend.com/view/..."
+            )
+        
+        with col2:
+            docsend_email = st.text_input(
+                "Email:",
+                key="docsend_email",
+                placeholder="your@email.com"
+            )
+        
+        docsend_password = st.text_input(
+            "Password (if required):",
+            key="docsend_password",
+            type="password",
+            placeholder="Optional password"
+        )
+        
+        # Show status if DocSend content is cached
+        if st.session_state.get('docsend_content'):
+            docsend_metadata = st.session_state.get('docsend_metadata', {})
+            slides_processed = docsend_metadata.get('processed_slides', 0)
+            total_slides = docsend_metadata.get('total_slides', 0)
+            processing_time = docsend_metadata.get('processing_time', 0)
+            
+            st.success(f"✅ DocSend deck processed: {slides_processed}/{total_slides} slides ({processing_time:.1f}s)")
+            
+            with st.expander("📋 DocSend Processing Details", expanded=False):
+                st.write(f"**URL:** {docsend_metadata.get('url', 'Unknown')}")
+                st.write(f"**Total slides:** {total_slides}")
+                st.write(f"**Slides with text:** {docsend_metadata.get('slides_with_text', 0)}")
+                st.write(f"**Total characters:** {docsend_metadata.get('total_characters', 0):,}")
+                st.write(f"**Processing time:** {processing_time:.1f} seconds")
+                
+                # Show preview of extracted content
+                content_preview = st.session_state.docsend_content[:500]
+                st.text_area("Content preview:", content_preview, height=100, disabled=True)
+        
+        elif docsend_url:
+            st.info(f"📊 DocSend deck will be processed: {docsend_url}")
+            if not docsend_email:
+                st.warning("⚠️ Email is required for DocSend access")
+        
+        # Process DocSend button
+        if st.button("🔄 Process DocSend Deck", key="process_docsend_btn"):
+            if docsend_url and docsend_email:
+                await self._process_docsend_deck(docsend_url, docsend_email, docsend_password)
+            else:
+                st.error("Please provide both DocSend URL and email")
+    
+    async def _process_docsend_deck(self, url: str, email: str, password: str = '') -> None:
+        """Process DocSend deck with OCR."""
+        try:
+            from src.core.docsend_client import DocSendClient
+            import os
+            import threading
+            
+            with st.spinner("🔬 Processing DocSend deck... (might be slow, please have patience)"):
+                # Initialize DocSend client
+                tesseract_cmd = os.getenv('TESSERACT_CMD')
+                docsend_client = DocSendClient(tesseract_cmd=tesseract_cmd)
+                
+                # Create progress tracking that's thread-safe
+                progress_placeholder = st.empty()
+                progress_data = {'percentage': 0, 'status': 'Starting...'}
+                progress_lock = threading.Lock()
+                
+                def progress_callback(percentage, status):
+                    """Thread-safe progress callback."""
+                    try:
+                        with progress_lock:
+                            progress_data['percentage'] = percentage
+                            progress_data['status'] = status
+                        # Don't update UI from thread - will be handled by main thread
+                    except Exception:
+                        pass  # Ignore any threading issues
+                
+                # Start progress monitoring in main thread
+                def update_progress():
+                    try:
+                        with progress_lock:
+                            percentage = progress_data['percentage']
+                            status = progress_data['status']
+                        progress_placeholder.progress(percentage / 100, text=status)
+                    except Exception:
+                        pass
+                
+                # Process DocSend with thread-safe progress
+                result = await docsend_client.fetch_docsend_async(
+                    url=url,
+                    email=email,
+                    password=password if password else None,
+                    progress_callback=progress_callback
+                )
+                
+                # Final progress update
+                update_progress()
+                progress_placeholder.empty()
+                
+                if result.get('success'):
+                    docsend_content = result['content']
+                    docsend_metadata = result['metadata']
+                    
+                    # Cache the results
+                    st.session_state.docsend_content = docsend_content
+                    st.session_state.docsend_metadata = docsend_metadata
+                    
+                    slides_processed = docsend_metadata.get('processed_slides', 0)
+                    total_slides = docsend_metadata.get('total_slides', 0)
+                    
+                    self.show_success(f"✅ DocSend processing complete: {slides_processed}/{total_slides} slides processed")
+                    st.rerun()
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    self.show_error(f"DocSend processing failed: {error_msg}")
+                    
+        except ImportError:
+            self.show_error("DocSend dependencies not installed. Run: pip install -r requirements_docsend.txt")
+        except Exception as e:
+            self.show_error(f"DocSend processing error: {str(e)}")
+            # Add more detailed error logging
+            import traceback
+            print(f"DocSend processing exception: {traceback.format_exc()}")
+    
     async def _render_report_generation(self) -> None:
         """Render the report generation section."""
         st.subheader("6. Generate Report")
@@ -434,9 +568,10 @@ class InteractiveResearchPage(BasePage):
         has_urls = bool(st.session_state.get('urls_input', '').strip())
         has_crawl = bool(st.session_state.get('crawl_start_url', '').strip())
         has_selected_urls = bool(st.session_state.selected_sitemap_urls)
+        has_docsend = bool(st.session_state.get('docsend_content', ''))
         
-        if not (research_query or has_docs or has_urls or has_crawl or has_selected_urls):
-            self.show_warning("Please provide a research query, upload documents, enter URLs, or select options for crawling.")
+        if not (research_query or has_docs or has_urls or has_crawl or has_selected_urls or has_docsend):
+            self.show_warning("Please provide a research query, upload documents, enter URLs, select crawling options, or process a DocSend deck.")
             return
         
         with st.spinner("Generating report..."):
@@ -555,6 +690,10 @@ class InteractiveResearchPage(BasePage):
         
         combined_web = "\n".join(web_content)
         
+        # Add DocSend content
+        docsend_content = st.session_state.get('docsend_content', '')
+        docsend_metadata = st.session_state.get('docsend_metadata', {})
+        
         # Build prompt
         if research_query:
             prompt = f"Research Query: {research_query}\n\n"
@@ -566,6 +705,15 @@ class InteractiveResearchPage(BasePage):
         
         if combined_web:
             prompt += f"Web Content:\n{combined_web}\n\n"
+        
+        if docsend_content:
+            slides_processed = docsend_metadata.get('processed_slides', 0)
+            total_slides = docsend_metadata.get('total_slides', 0)
+            docsend_url = docsend_metadata.get('url', 'Unknown')
+            
+            prompt += f"DocSend Presentation Content:\n"
+            prompt += f"--- DocSend Deck: {docsend_url} ({slides_processed}/{total_slides} slides processed) ---\n"
+            prompt += f"{docsend_content}\n\n"
         
         prompt += "Based on the above content, please generate a comprehensive research report."
         
@@ -602,6 +750,13 @@ class InteractiveResearchPage(BasePage):
             for item in st.session_state.scraped_web_content:
                 if item.get("status") == "success" and item.get("content"):
                     all_text.append(f"--- Web: {item['url']} ---\n{item['content']}")
+            
+            # Add DocSend content to RAG
+            docsend_content = st.session_state.get('docsend_content', '')
+            if docsend_content:
+                docsend_metadata = st.session_state.get('docsend_metadata', {})
+                docsend_url = docsend_metadata.get('url', 'Unknown')
+                all_text.append(f"--- DocSend: {docsend_url} ---\n{docsend_content}")
             
             combined_text = "\n\n---\n\n".join(all_text)
             text_chunks = split_text_into_chunks(combined_text)

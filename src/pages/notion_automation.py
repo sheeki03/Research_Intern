@@ -1286,9 +1286,21 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     tesseract_cmd = os.getenv('TESSERACT_CMD')
                     docsend_client = DocSendClient(tesseract_cmd=tesseract_cmd)
                     
-                    # Process with progress callback
+                    # Process with thread-safe progress callback
+                    import threading
+                    progress_data = {'percentage': 0, 'status': 'Starting...'}
+                    progress_lock = threading.Lock()
+                    
                     def progress_callback(percentage, status):
-                        self._update_progress(50 + int(percentage * 0.4), status)  # 50-90% range
+                        """Thread-safe progress callback."""
+                        try:
+                            with progress_lock:
+                                progress_data['percentage'] = percentage
+                                progress_data['status'] = status
+                            # Update progress in main thread context
+                            self._update_progress(50 + int(percentage * 0.4), status)  # 50-90% range
+                        except Exception:
+                            pass  # Ignore any threading issues
                     
                     result = await docsend_client.fetch_docsend_async(
                         url=docsend_url,

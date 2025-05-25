@@ -12,8 +12,9 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright dependencies
+# Install system dependencies for multi-browser support
 RUN apt-get update && apt-get install -y \
+    # Playwright dependencies
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -27,6 +28,22 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
+    # Selenium dependencies
+    wget \
+    gnupg2 \
+    software-properties-common \
+    # Tesseract OCR
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    # Firefox for Selenium fallback
+    firefox-esr \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chrome for Selenium
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -44,8 +61,8 @@ RUN pip install --no-cache-dir \
     fastapi \
     uvicorn
 
-# Install Playwright browsers
-RUN playwright install chromium
+# Install Playwright browsers (all supported browsers)
+RUN playwright install chromium firefox webkit
 RUN playwright install-deps
 
 # Copy the rest of the application

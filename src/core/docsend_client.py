@@ -9,41 +9,243 @@ import os
 import time
 from typing import Dict, Any, Optional
 
+import platform
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
 from PIL import Image
 import pytesseract
 
 class DocSendClient:
     """Client for processing DocSend presentations with OCR."""
     
-    def __init__(self, tesseract_cmd: str = None):
-        """Initialize DocSend client with optional Tesseract path."""
+    def __init__(self, tesseract_cmd: str = None, preferred_browser: str = 'auto'):
+        """
+        Initialize DocSend client with optional Tesseract path and browser preference.
+        
+        Args:
+            tesseract_cmd: Path to tesseract executable (auto-detected if None)
+            preferred_browser: 'chrome', 'firefox', 'edge', or 'auto' for automatic detection
+        """
         if tesseract_cmd:
             pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        
+        self.preferred_browser = preferred_browser.lower()
+        self.os_type = platform.system().lower()
         
         # Suppress logs
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
         os.environ['PYTHONWARNINGS'] = 'ignore'
     
-    def _init_browser(self) -> webdriver.Chrome:
-        """Initialize and return a configured Chrome browser instance."""
-        chrome_options = Options()
-        user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36'
+    def _get_user_agent(self) -> str:
+        """Get appropriate user agent string based on OS."""
+        if self.os_type == 'darwin':  # macOS
+            return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+        elif self.os_type == 'windows':
+            return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+        else:  # Linux and others
+            return 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+    
+    def _init_chrome(self):
+        """Initialize Chrome browser with enhanced stealth capabilities."""
+        try:
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument(f'--user-agent={self._get_user_agent()}')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument('--log-level=3')
+            chrome_options.add_argument("--window-size=1920,1080")  # More realistic window size
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            
+            # Enhanced stealth arguments to avoid bot detection
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument("--disable-web-security")
+            chrome_options.add_argument("--allow-running-insecure-content")
+            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+            chrome_options.add_argument("--disable-ipc-flooding-protection")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
+            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument("--disable-client-side-phishing-detection")
+            chrome_options.add_argument("--disable-sync")
+            chrome_options.add_argument("--metrics-recording-only")
+            chrome_options.add_argument("--no-first-run")
+            chrome_options.add_argument("--safebrowsing-disable-auto-update")
+            chrome_options.add_argument("--enable-automation")  # Paradoxically, this can help
+            chrome_options.add_argument("--password-store=basic")
+            chrome_options.add_argument("--use-mock-keychain")
+            
+            # Additional preferences to appear more human-like
+            prefs = {
+                "profile.default_content_setting_values": {
+                    "notifications": 2,  # Block notifications
+                    "geolocation": 2,    # Block location sharing
+                },
+                "profile.managed_default_content_settings": {
+                    "images": 1  # Allow images
+                },
+                "profile.default_content_settings": {
+                    "popups": 0  # Allow popups (some sites need this)
+                },
+                "credentials_enable_service": False,
+                "profile.password_manager_enabled": False
+            }
+            chrome_options.add_experimental_option("prefs", prefs)
+            
+            service = ChromeService(ChromeDriverManager().install())
+            browser = webdriver.Chrome(service=service, options=chrome_options)
+            
+            # Execute JavaScript to remove webdriver property and add human-like properties
+            browser.execute_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+                
+                // Add some human-like properties
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                });
+                
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                
+                // Override the permissions API
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+                
+                // Add realistic screen properties
+                Object.defineProperty(screen, 'availWidth', {
+                    get: () => 1920,
+                });
+                Object.defineProperty(screen, 'availHeight', {
+                    get: () => 1080,
+                });
+            """)
+            
+            return browser
+        except Exception as e:
+            raise WebDriverException(f"Failed to initialize Chrome: {str(e)}")
+    
+    def _init_firefox(self):
+        """Initialize Firefox browser."""
+        try:
+            firefox_options = FirefoxOptions()
+            firefox_options.add_argument("--headless")
+            firefox_options.set_preference("general.useragent.override", self._get_user_agent())
+            firefox_options.set_preference("dom.webdriver.enabled", False)
+            firefox_options.set_preference("useAutomationExtension", False)
+            firefox_options.set_preference("media.volume_scale", "0.0")
+            
+            service = FirefoxService(GeckoDriverManager().install())
+            return webdriver.Firefox(service=service, options=firefox_options)
+        except Exception as e:
+            raise WebDriverException(f"Failed to initialize Firefox: {str(e)}")
+    
+    def _init_edge(self):
+        """Initialize Edge browser."""
+        try:
+            edge_options = EdgeOptions()
+            edge_options.add_argument("--headless=new")
+            edge_options.add_argument(f'--user-agent={self._get_user_agent()}')
+            edge_options.add_argument('--no-sandbox')
+            edge_options.add_argument("--disable-gpu")
+            edge_options.add_argument('--log-level=3')
+            edge_options.add_argument("--window-size=1200,900")
+            edge_options.add_argument("--disable-dev-shm-usage")
+            edge_options.add_argument("--disable-extensions")
+            edge_options.add_argument("--disable-blink-features=AutomationControlled")
+            
+            service = EdgeService(EdgeChromiumDriverManager().install())
+            return webdriver.Edge(service=service, options=edge_options)
+        except Exception as e:
+            raise WebDriverException(f"Failed to initialize Edge: {str(e)}")
+    
+    def _detect_available_browsers(self) -> list:
+        """Detect which browsers are available on the system."""
+        available = []
         
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument(f'user-agent={user_agent}')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument('--log-level=3')
-        chrome_options.add_argument("--window-size=1200,900")
+        # Test Chrome
+        try:
+            self._init_chrome().quit()
+            available.append('chrome')
+        except:
+            pass
         
-        return webdriver.Chrome(options=chrome_options)
+        # Test Firefox
+        try:
+            self._init_firefox().quit()
+            available.append('firefox')
+        except:
+            pass
+        
+        # Test Edge (mainly for Windows, but Edge is available on other platforms too)
+        try:
+            self._init_edge().quit()
+            available.append('edge')
+        except:
+            pass
+        
+        return available
+    
+    def _init_browser(self):
+        """Initialize and return a configured browser instance with fallback support."""
+        browsers_to_try = []
+        
+        if self.preferred_browser == 'auto':
+            # Auto-detect: try Chrome first, then Firefox, then Edge
+            browsers_to_try = ['chrome', 'firefox', 'edge']
+        elif self.preferred_browser in ['chrome', 'firefox', 'edge']:
+            # Try preferred browser first, then fallback to others
+            browsers_to_try = [self.preferred_browser]
+            other_browsers = [b for b in ['chrome', 'firefox', 'edge'] if b != self.preferred_browser]
+            browsers_to_try.extend(other_browsers)
+        else:
+            # Invalid preference, use auto-detection
+            browsers_to_try = ['chrome', 'firefox', 'edge']
+        
+        last_error = None
+        
+        for browser in browsers_to_try:
+            try:
+                if browser == 'chrome':
+                    return self._init_chrome()
+                elif browser == 'firefox':
+                    return self._init_firefox()
+                elif browser == 'edge':
+                    return self._init_edge()
+            except Exception as e:
+                last_error = e
+                print(f"Failed to initialize {browser}: {str(e)}")
+                continue
+        
+        # If we get here, no browser worked
+        available_browsers = self._detect_available_browsers()
+        if available_browsers:
+            error_msg = f"Failed to initialize any browser. Available browsers detected: {', '.join(available_browsers)}. Last error: {str(last_error)}"
+        else:
+            error_msg = f"No supported browsers found. Please install Chrome, Firefox, or Edge. Last error: {str(last_error)}"
+        
+        raise WebDriverException(error_msg)
     
     def _perform_ocr_on_image(self, image_data: bytes, filename: str = "") -> str:
         """Perform OCR on an image and return the extracted text."""
@@ -67,12 +269,159 @@ class DocSendClient:
                 progress_callback(10, "Loading DocSend page...")
             
             browser.get(url)
-            time.sleep(2)
+            # Human-like delay - vary between 2-4 seconds
+            import random
+            time.sleep(random.uniform(2.5, 4.0))
             
-            # Handle password prompt if present
+            # Wait for page to be fully loaded
+            WebDriverWait(browser, 10).until(
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
+            )
+            
+            # Handle email prompt first (most common)
+            try:
+                # Find the visible email input (not hidden feedback forms)
+                email_input = None
+                email_selectors = [
+                    "input[name='link_auth_form[email]']",  # Specific DocSend access form
+                    "input[id='link_auth_form_email']",     # Alternative ID selector
+                    "input[type='email']",                  # Generic email inputs
+                    "input[name='email']", 
+                    "input[placeholder*='email' i]"
+                ]
+                
+                for selector in email_selectors:
+                    try:
+                        potential_inputs = browser.find_elements(By.CSS_SELECTOR, selector)
+                        for input_elem in potential_inputs:
+                            if input_elem.is_displayed() and input_elem.is_enabled():
+                                email_input = input_elem
+                                print(f"Found visible email input with selector: {selector}")
+                                break
+                        if email_input:
+                            break
+                    except:
+                        continue
+                
+                if not email_input:
+                    # Fallback to wait for any clickable email input
+                    email_input = WebDriverWait(browser, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='email'], input[name='email'], input[placeholder*='email' i]"))
+                    )
+                
+                if progress_callback:
+                    progress_callback(15, "Entering email...")
+                
+                # Scroll to element to ensure it's visible
+                browser.execute_script("arguments[0].scrollIntoView(true);", email_input)
+                time.sleep(random.uniform(0.5, 1.0))
+                
+                # Try to interact with the element
+                try:
+                    email_input.clear()
+                except:
+                    # If clear fails, try clicking first then clearing
+                    try:
+                        email_input.click()
+                        time.sleep(random.uniform(0.3, 0.7))
+                        email_input.clear()
+                    except:
+                        # If still fails, use JavaScript to clear
+                        browser.execute_script("arguments[0].value = '';", email_input)
+                
+                # Send the email with human-like typing speed
+                for char in email:
+                    email_input.send_keys(char)
+                    time.sleep(random.uniform(0.05, 0.15))  # Random typing delay
+                
+                # Look for submit button with better detection
+                submit_clicked = False
+                submit_selectors = [
+                    "input[value='Continue']",              # DocSend continue button (most common)
+                    "input[type='submit'][value='Continue']", # Specific continue submit
+                    "button:contains('Continue')",          # Continue button text
+                    "input[name='commit'][value='Continue']", # DocSend commit with Continue value
+                    "input[name='commit']",                 # DocSend specific submit
+                    "button[type='submit']",
+                    "input[type='submit']", 
+                    "button:contains('Submit')",
+                    "button:contains('Access')",
+                    "button:contains('View')",
+                    ".submit-button",
+                    ".continue-button"
+                ]
+                
+                for selector in submit_selectors:
+                    try:
+                        submit_buttons = browser.find_elements(By.CSS_SELECTOR, selector)
+                        for submit_button in submit_buttons:
+                            if submit_button.is_enabled() and submit_button.is_displayed():
+                                button_text = submit_button.text or submit_button.get_attribute('value') or 'no-text'
+                                print(f"Found button: '{button_text}' with selector: {selector}")
+                                print(f"Clicking submit button with selector: {selector}")
+                                browser.execute_script("arguments[0].click();", submit_button)
+                                submit_clicked = True
+                                break
+                        if submit_clicked:
+                            break
+                    except Exception as e:
+                        print(f"Error with selector {selector}: {e}")
+                        continue
+                
+                # If no specific selectors worked, try finding any button with "Continue" text
+                if not submit_clicked:
+                    try:
+                        all_buttons = browser.find_elements(By.TAG_NAME, "button")
+                        all_inputs = browser.find_elements(By.TAG_NAME, "input")
+                        
+                        for element in all_buttons + all_inputs:
+                            if element.is_displayed() and element.is_enabled():
+                                text = element.text or element.get_attribute('value') or ''
+                                if 'continue' in text.lower():
+                                    print(f"Found Continue button by text search: '{text}'")
+                                    browser.execute_script("arguments[0].click();", element)
+                                    submit_clicked = True
+                                    break
+                    except Exception as e:
+                        print(f"Error in text-based button search: {e}")
+                
+                if not submit_clicked:
+                    # Fallback: try pressing Enter
+                    email_input.send_keys(Keys.RETURN)
+                
+                # Human-like delay after submission
+                time.sleep(random.uniform(2.5, 4.0))
+                
+                # Check if email submission was successful
+                print(f"After email submission - URL: {browser.current_url}")
+                print(f"After email submission - Title: {browser.title}")
+                
+                # Wait for the email popup/modal to disappear (key insight!)
+                print("Waiting for email popup to disappear...")
+                try:
+                    # Wait for the email form to disappear (indicating successful submission)
+                    WebDriverWait(browser, 10).until_not(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='link_auth_form[email]']"))
+                    )
+                    print("✅ Email popup disappeared - submission successful!")
+                except TimeoutException:
+                    print("⚠️ Email popup still present - submission may have failed")
+                
+                # Wait a bit longer for deck content to load dynamically
+                time.sleep(random.uniform(2.0, 3.0))
+                
+            except TimeoutException:
+                # No email required, continue
+                pass
+            except Exception as e:
+                print(f"Email input handling failed: {str(e)}")
+                # Continue anyway - maybe email isn't required
+                pass
+            
+            # Handle password prompt if present (after email)
             try:
                 password_input = WebDriverWait(browser, 3).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='password']"))
                 )
                 if not password:
                     return {
@@ -85,44 +434,241 @@ class DocSendClient:
                 if progress_callback:
                     progress_callback(20, "Entering password...")
                 
-                password_input.send_keys(password)
-                password_input.send_keys(Keys.RETURN)
-                time.sleep(2)
+                # Scroll to element to ensure it's visible
+                browser.execute_script("arguments[0].scrollIntoView(true);", password_input)
+                time.sleep(random.uniform(0.5, 1.0))
+                
+                # Try to interact with the element
+                try:
+                    password_input.clear()
+                except:
+                    # If clear fails, try clicking first then clearing
+                    try:
+                        password_input.click()
+                        time.sleep(random.uniform(0.3, 0.7))
+                        password_input.clear()
+                    except:
+                        # If still fails, use JavaScript to clear
+                        browser.execute_script("arguments[0].value = '';", password_input)
+                
+                # Send the password with human-like typing speed
+                for char in password:
+                    password_input.send_keys(char)
+                    time.sleep(random.uniform(0.05, 0.15))  # Random typing delay
+                
+                # Look for submit button with better detection
+                submit_clicked = False
+                submit_selectors = [
+                    "button[type='submit']",
+                    "input[type='submit']", 
+                    "button:contains('Continue')",
+                    "button:contains('Submit')",
+                    "button:contains('Access')",
+                    "button:contains('View')",
+                    ".submit-button",
+                    ".continue-button"
+                ]
+                
+                for selector in submit_selectors:
+                    try:
+                        submit_button = browser.find_element(By.CSS_SELECTOR, selector)
+                        if submit_button.is_enabled() and submit_button.is_displayed():
+                            browser.execute_script("arguments[0].click();", submit_button)
+                            submit_clicked = True
+                            break
+                    except:
+                        continue
+                
+                if not submit_clicked:
+                    # Fallback: try pressing Enter
+                    password_input.send_keys(Keys.RETURN)
+                
+                time.sleep(3)
             except TimeoutException:
                 pass  # No password required
+            except Exception as e:
+                print(f"Password input handling failed: {str(e)}")
+                # Continue anyway - maybe password isn't required
+                pass
             
             if progress_callback:
                 progress_callback(30, "Finding deck pages...")
             
-            # Check if deck is available
+            # Wait for page to fully load and check for deck content
+            time.sleep(2)
+            
+            # Debug: Check current page state
+            print(f"Looking for deck content - URL: {browser.current_url}")
+            print(f"Looking for deck content - Title: {browser.title}")
+            
+            # Check if deck is available - DocSend shows one image per page
+            deck_found = False
+            current_page_image = None
+            
+            print("Searching for deck content (single page image)...")
+            
+            # Wait for the main deck image to load after email popup disappears
             try:
-                WebDriverWait(browser, 5).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "page"))
+                print("  Looking for main deck page image...")
+                WebDriverWait(browser, 15).until(
+                    lambda driver: len(driver.find_elements(By.TAG_NAME, "img")) > 0
                 )
+                
+                # Get all images and find the main deck page image
+                all_images = browser.find_elements(By.TAG_NAME, "img")
+                print(f"  Found {len(all_images)} total images")
+                
+                # Look for the main content image (usually the largest visible image)
+                for img in all_images:
+                    try:
+                        src = img.get_attribute('src') or ''
+                        alt = img.get_attribute('alt') or ''
+                        width = img.size.get('width', 0)
+                        height = img.size.get('height', 0)
+                        is_displayed = img.is_displayed()
+                        
+                        print(f"    Image: {src[:50]}... size={width}x{height} visible={is_displayed}")
+                        
+                        # Check if this looks like the main deck page image
+                        is_main_image = (
+                            is_displayed and
+                            width > 300 and height > 200  # Reasonable presentation size
+                        )
+                        
+                        if is_main_image and not current_page_image:
+                            current_page_image = img
+                            print(f"    ✅ Found main deck image: {src[:60]}... size={width}x{height}")
+                            deck_found = True
+                    
+                    except Exception as e:
+                        print(f"    Error analyzing image: {e}")
+                        continue
+                
+                if not current_page_image:
+                    print(f"  ⚠️ No main deck image found, trying largest image...")
+                    # Fallback: use the largest visible image
+                    largest_image = None
+                    largest_size = 0
+                    
+                    for img in all_images:
+                        try:
+                            if img.is_displayed():
+                                width = img.size.get('width', 0)
+                                height = img.size.get('height', 0)
+                                size = width * height
+                                if size > largest_size and width > 100 and height > 100:
+                                    largest_image = img
+                                    largest_size = size
+                        except:
+                            continue
+                    
+                    if largest_image:
+                        current_page_image = largest_image
+                        deck_found = True
+                        print(f"    ✅ Using largest image as deck content")
+                
             except TimeoutException:
+                print(f"  ❌ No images found after waiting")
+                
+            # If no images found, try traditional selectors as fallback
+            if not deck_found:
+                print("  Trying traditional page selectors as fallback...")
+                traditional_selectors = [".page", ".slide", "[data-page]", ".document-page"]
+                for selector in traditional_selectors:
+                    try:
+                        elements = WebDriverWait(browser, 5).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                        found_elements = browser.find_elements(By.CSS_SELECTOR, selector)
+                        print(f"  ✅ Found {len(found_elements)} elements with {selector}")
+                        deck_found = True
+                        break
+                    except TimeoutException:
+                        continue
+            
+            if not deck_found:
+                # Check if we're still on an access/login page
+                page_source = browser.page_source.lower()
+                current_url = browser.current_url
+                page_title = browser.title
+                
+                # Provide more specific error messages based on page content
+                if 'approval' in page_source or 'pending' in page_source:
+                    error_msg = 'Deck requires manual approval from owner. Contact deck owner to request access.'
+                elif 'verify' in page_source or 'verification' in page_source:
+                    error_msg = 'Email verification required. Check your email for verification link and try again.'
+                elif 'password' in page_source and 'incorrect' in page_source:
+                    error_msg = 'Incorrect password provided. Check password and try again.'
+                elif 'email' in page_source and 'invalid' in page_source:
+                    error_msg = 'Invalid email address. Use a valid email address.'
+                elif any(keyword in page_source for keyword in ['email', 'password', 'access', 'login']):
+                    error_msg = 'Deck requires additional verification or access denied. Check email/password.'
+                elif 'restricted' in page_source or 'private' in page_source:
+                    error_msg = 'Deck is private or restricted. Contact owner for access.'
+                else:
+                    error_msg = 'No deck found or access denied'
+                
                 return {
                     'success': False,
-                    'error': 'No deck found or access denied',
+                    'error': error_msg,
+                    'content': '',
+                    'metadata': {},
+                    'debug_info': {
+                        'current_url': current_url,
+                        'page_title': page_title,
+                        'page_indicators': {
+                            'has_email_fields': 'email' in page_source,
+                            'has_password_fields': 'password' in page_source,
+                            'has_verification': 'verify' in page_source,
+                            'has_approval': 'approval' in page_source,
+                            'has_restricted': 'restricted' in page_source or 'private' in page_source
+                        }
+                    }
+                }
+            
+            # Process the deck using single-image-per-page approach
+            if not current_page_image:
+                return {
+                    'success': False,
+                    'error': 'No deck content image found',
                     'content': '',
                     'metadata': {}
                 }
             
-            # Get all pages
-            pages = browser.find_elements(By.CLASS_NAME, "page")
-            total_pages = len(pages)
+            print(f"✅ Found deck content! Processing pages...")
             
-            if total_pages == 0:
-                return {
-                    'success': False,
-                    'error': 'No pages found in deck',
-                    'content': '',
-                    'metadata': {}
-                }
+            # Look for navigation elements to determine total pages
+            total_pages = 1  # At least one page (current)
+            
+            # Try to find page indicators or navigation
+            try:
+                # Look for page numbers or navigation elements
+                page_indicators = browser.find_elements(By.CSS_SELECTOR, 
+                    "[class*='page'], [id*='page'], .pagination, .nav, [aria-label*='page']")
+                
+                for indicator in page_indicators:
+                    try:
+                        text = indicator.text or indicator.get_attribute('aria-label') or ''
+                        # Look for patterns like "1 of 10", "Page 1/10", etc.
+                        import re
+                        matches = re.findall(r'(\d+)\s*(?:of|/)\s*(\d+)', text.lower())
+                        if matches:
+                            current_page, total = matches[0]
+                            total_pages = int(total)
+                            print(f"  📊 Found page indicator: {current_page} of {total_pages}")
+                            break
+                    except:
+                        continue
+                        
+            except Exception as e:
+                print(f"  ⚠️ Could not determine total pages: {e}")
+            
+            print(f"  📋 Processing {total_pages} page(s)...")
             
             if progress_callback:
                 progress_callback(40, f"Processing {total_pages} slides...")
             
-            # Process each page with OCR
+            # Process each page with OCR using single-image navigation
             all_text = []
             slide_texts = []  # Keep individual slide texts for better structure
             
@@ -132,22 +678,89 @@ class DocSendClient:
                     progress_callback(int(progress), f"OCR processing slide {page_num + 1}/{total_pages}")
                 
                 try:
-                    page = browser.find_elements(By.CLASS_NAME, "page")[page_num]
-                    screenshot = page.screenshot_as_png
+                    print(f"  📄 Processing page {page_num + 1}/{total_pages}")
                     
-                    text = self._perform_ocr_on_image(screenshot, f"slide_{page_num + 1}")
-                    if text:
-                        all_text.append(text)
-                        slide_texts.append({
-                            'slide_number': page_num + 1,
-                            'text': text,
-                            'length': len(text)
-                        })
+                    # Get the current page image
+                    page_image = current_page_image
                     
-                    time.sleep(0.5)  # Small delay between pages
+                    # For pages after the first, we need to navigate
+                    if page_num > 0:
+                        print(f"    🔄 Navigating to page {page_num + 1}")
+                        
+                        # Look for next/forward navigation elements
+                        navigation_found = False
+                        nav_selectors = [
+                            "[aria-label*='next']",
+                            "[aria-label*='forward']", 
+                            ".next",
+                            ".forward",
+                            "button:contains('Next')",
+                            "button:contains('>')",
+                            "[class*='next']",
+                            "[id*='next']"
+                        ]
+                        
+                        for nav_selector in nav_selectors:
+                            try:
+                                nav_elements = browser.find_elements(By.CSS_SELECTOR, nav_selector)
+                                for nav_elem in nav_elements:
+                                    if nav_elem.is_displayed() and nav_elem.is_enabled():
+                                        print(f"      🎯 Clicking navigation: {nav_selector}")
+                                        nav_elem.click()
+                                        navigation_found = True
+                                        break
+                                if navigation_found:
+                                    break
+                            except:
+                                continue
+                        
+                        if not navigation_found:
+                            # Try keyboard navigation
+                            print(f"      ⌨️ Trying keyboard navigation (arrow keys)")
+                            try:
+                                from selenium.webdriver.common.keys import Keys
+                                browser.find_element(By.TAG_NAME, "body").send_keys(Keys.ARROW_RIGHT)
+                                navigation_found = True
+                            except:
+                                pass
+                        
+                        if navigation_found:
+                            # Wait for new page to load
+                            time.sleep(random.uniform(1.0, 2.0))
+                            
+                            # Find the updated page image
+                            try:
+                                new_images = browser.find_elements(By.TAG_NAME, "img")
+                                for img in new_images:
+                                    if img.is_displayed() and img.size.get('width', 0) > 300:
+                                        page_image = img
+                                        break
+                            except:
+                                pass
+                        else:
+                            print(f"      ⚠️ Could not navigate to page {page_num + 1}")
+                            continue
+                    
+                    # Take screenshot of the current page image
+                    if page_image:
+                        screenshot = page_image.screenshot_as_png
+                        
+                        text = self._perform_ocr_on_image(screenshot, f"slide_{page_num + 1}")
+                        if text:
+                            all_text.append(text)
+                            slide_texts.append({
+                                'slide_number': page_num + 1,
+                                'text': text,
+                                'length': len(text)
+                            })
+                            print(f"    ✅ Extracted {len(text)} characters from page {page_num + 1}")
+                        else:
+                            print(f"    ⚠️ No text extracted from page {page_num + 1}")
+                    
+                    time.sleep(random.uniform(0.5, 1.0))  # Human-like delay between pages
                     
                 except Exception as e:
-                    print(f"Error processing slide {page_num + 1}: {e}")
+                    print(f"    ❌ Error processing slide {page_num + 1}: {e}")
                     continue
             
             if progress_callback:
@@ -178,11 +791,31 @@ class DocSendClient:
             }
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"DocSend processing exception: {error_details}")
+            
+            # Add debugging information
+            debug_info = {
+                'error_details': error_details,
+                'url': url,
+                'browser_title': 'Unknown',
+                'page_source_snippet': 'Unknown'
+            }
+            
+            try:
+                debug_info['browser_title'] = browser.title
+                page_source = browser.page_source
+                debug_info['page_source_snippet'] = page_source[:500] if page_source else 'No page source'
+            except:
+                pass
+            
             return {
                 'success': False,
                 'error': f"DocSend processing failed: {str(e)}",
                 'content': '',
-                'metadata': {}
+                'metadata': {},
+                'debug_info': debug_info
             }
     
     async def fetch_docsend_async(self, url: str, email: str, 
@@ -211,11 +844,15 @@ class DocSendClient:
             return result
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Async DocSend processing exception: {error_details}")
             return {
                 'success': False,
                 'error': f"Async DocSend processing failed: {str(e)}",
                 'content': '',
-                'metadata': {}
+                'metadata': {},
+                'debug_info': error_details
             }
         finally:
             if browser:
