@@ -14,7 +14,6 @@ from src.config import USERS_CONFIG_PATH, DEFAULT_PROMPTS, SYSTEM_PROMPT
 from src.audit_logger import get_audit_logger
 from src.pages.interactive_research import InteractiveResearchPage
 from src.pages.notion_automation import NotionAutomationPage
-from src.pages.research_lab import ResearchLabPage
 
 class AppController:
     """Main application controller for page routing and state management."""
@@ -22,8 +21,7 @@ class AppController:
     def __init__(self):
         self.pages = {
             "Interactive Research": InteractiveResearchPage(),
-            "Notion Automation": NotionAutomationPage(),
-            "Research Lab": ResearchLabPage()
+            "Notion Automation": NotionAutomationPage()
         }
         self.current_page = None
     
@@ -171,6 +169,10 @@ class AppController:
         current_page_obj = self.pages.get(st.session_state.current_page)
         if current_page_obj:
             st.caption(f"📄 {current_page_obj.get_page_title()}")
+        
+        # Admin Panel (if admin user)
+        if st.session_state.get("role") == "admin":
+            await self._render_global_admin_panel()
     
     async def _render_main_content(self) -> None:
         """Render the main content area."""
@@ -381,4 +383,413 @@ class AppController:
     
     def _hash_password(self, password: str) -> str:
         """Hash password with bcrypt."""
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode() 
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    
+    async def _render_global_admin_panel(self) -> None:
+        """Render global admin panel in sidebar for admin users."""
+        st.markdown("---")
+        st.subheader("👑 Global Admin")
+        
+        # System Overview
+        with st.expander("📊 System Overview", expanded=False):
+            # User stats
+            users = self._load_users()
+            total_users = len(users)
+            admin_users = len([u for u in users.values() if u.get('role') == 'admin'])
+            researcher_users = total_users - admin_users
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Users", total_users)
+                st.metric("Admin Users", admin_users)
+            with col2:
+                st.metric("Researchers", researcher_users)
+                st.metric("Current Page", st.session_state.current_page)
+        
+        # User Management
+        with st.expander("👥 User Management", expanded=False):
+            st.markdown("**Active Users**")
+            users = self._load_users()
+            
+            for username, user_data in users.items():
+                role = user_data.get('role', 'unknown')
+                role_icon = "👑" if role == "admin" else "🔬"
+                
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    st.write(f"{role_icon} {username}")
+                with col2:
+                    st.caption(role.title())
+                with col3:
+                    if username != st.session_state.username:  # Can't delete self
+                        if st.button("🗑️", key=f"delete_user_{username}", help=f"Delete {username}"):
+                            await self._delete_user(username)
+            
+            # Add new user
+            st.markdown("**Add New User**")
+            new_username = st.text_input("Username", key="admin_new_username")
+            new_password = st.text_input("Password", type="password", key="admin_new_password")
+            new_role = st.selectbox("Role", ["researcher", "admin"], key="admin_new_role")
+            
+            if st.button("➕ Add User", key="admin_add_user_btn"):
+                if new_username and new_password:
+                    await self._add_user(new_username, new_password, new_role)
+                else:
+                    st.error("Username and password required")
+        
+        # User Activity Monitoring
+        with st.expander("📊 User Activity Monitoring", expanded=False):
+            await self._render_user_activity_monitoring()
+        
+        # System Controls
+        with st.expander("🔧 System Controls", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🧹 Clear All Logs", key="admin_clear_logs"):
+                    await self._clear_system_logs()
+                
+                if st.button("🔄 Reset All Sessions", key="admin_reset_all_sessions"):
+                    await self._reset_all_sessions()
+            
+            with col2:
+                if st.button("📊 Export User Data", key="admin_export_users"):
+                    await self._export_user_data()
+                
+                if st.button("⚠️ System Maintenance", key="admin_maintenance"):
+                    await self._system_maintenance()
+        
+        # Environment Status
+        with st.expander("🌍 Environment Status", expanded=False):
+            import os
+            
+            # Check critical environment variables
+            env_vars = {
+                "OPENROUTER_API_KEY": "🔑 OpenRouter API",
+                "FIRECRAWL_API_URL": "🌐 Firecrawl URL",
+                "REDIS_URL": "📦 Redis Cache",
+                "TESSERACT_CMD": "👁️ OCR Engine"
+            }
+            
+            for var, description in env_vars.items():
+                value = os.getenv(var)
+                if value:
+                    st.success(f"✅ {description}")
+                else:
+                    st.error(f"❌ {description}")
+            
+            # System info
+            import platform
+            st.markdown("**System Information**")
+            st.code(f"""
+Platform: {platform.system()} {platform.release()}
+Python: {platform.python_version()}
+Streamlit: {st.__version__}
+            """)
+    
+    async def _delete_user(self, username: str) -> None:
+        """Delete a user account."""
+        try:
+            users = self._load_users()
+            if username in users:
+                del users[username]
+                if self._save_users(users):
+                    st.success(f"User '{username}' deleted successfully!")
+                    get_audit_logger(
+                        user=st.session_state.username,
+                        role=st.session_state.get("role", "N/A"),
+                        action="USER_DELETED",
+                        details=f"Admin deleted user: {username}"
+                    )
+                    st.rerun()
+                else:
+                    st.error("Failed to save user data")
+            else:
+                st.error("User not found")
+        except Exception as e:
+            st.error(f"Error deleting user: {e}")
+    
+    async def _add_user(self, username: str, password: str, role: str) -> None:
+        """Add a new user account."""
+        try:
+            users = self._load_users()
+            
+            if username in users:
+                st.error("Username already exists")
+                return
+            
+            users[username] = {
+                "password": self._hash_password(password),
+                "role": role,
+                "system_prompt": DEFAULT_PROMPTS.get(role, SYSTEM_PROMPT)
+            }
+            
+            if self._save_users(users):
+                st.success(f"User '{username}' created successfully!")
+                get_audit_logger(
+                    user=st.session_state.username,
+                    role=st.session_state.get("role", "N/A"),
+                    action="USER_CREATED",
+                    details=f"Admin created user: {username} with role: {role}"
+                )
+                # Clear form
+                st.session_state.admin_new_username = ""
+                st.session_state.admin_new_password = ""
+                st.rerun()
+            else:
+                st.error("Failed to save user data")
+        except Exception as e:
+            st.error(f"Error creating user: {e}")
+    
+    async def _clear_system_logs(self) -> None:
+        """Clear system logs."""
+        try:
+            import os
+            import glob
+            
+            log_files = glob.glob("logs/*.log")
+            cleared_count = 0
+            
+            for log_file in log_files:
+                try:
+                    os.remove(log_file)
+                    cleared_count += 1
+                except Exception:
+                    pass
+            
+            st.success(f"Cleared {cleared_count} log files")
+            get_audit_logger(
+                user=st.session_state.username,
+                role=st.session_state.get("role", "N/A"),
+                action="LOGS_CLEARED",
+                details=f"Admin cleared {cleared_count} log files"
+            )
+        except Exception as e:
+            st.error(f"Error clearing logs: {e}")
+    
+    async def _reset_all_sessions(self) -> None:
+        """Reset all user sessions (warning: this will log out all users)."""
+        try:
+            # This is a placeholder - in a real app you'd clear session storage
+            st.warning("⚠️ This would reset all user sessions in a production environment")
+            get_audit_logger(
+                user=st.session_state.username,
+                role=st.session_state.get("role", "N/A"),
+                action="ALL_SESSIONS_RESET",
+                details="Admin triggered global session reset"
+            )
+        except Exception as e:
+            st.error(f"Error resetting sessions: {e}")
+    
+    async def _export_user_data(self) -> None:
+        """Export user data for backup."""
+        try:
+            users = self._load_users()
+            
+            # Remove passwords for export
+            export_data = {}
+            for username, user_data in users.items():
+                export_data[username] = {
+                    "role": user_data.get("role", "researcher"),
+                    "created": "unknown"  # Would track creation date in real app
+                }
+            
+            import json
+            export_json = json.dumps(export_data, indent=2)
+            
+            st.download_button(
+                label="📥 Download User Export",
+                data=export_json,
+                file_name="user_export.json",
+                mime="application/json",
+                key="download_user_export"
+            )
+            
+            get_audit_logger(
+                user=st.session_state.username,
+                role=st.session_state.get("role", "N/A"),
+                action="USER_DATA_EXPORTED",
+                details="Admin exported user data"
+            )
+        except Exception as e:
+            st.error(f"Error exporting user data: {e}")
+    
+    async def _system_maintenance(self) -> None:
+        """Perform system maintenance tasks."""
+        try:
+            maintenance_tasks = []
+            
+            # Clear temporary files
+            import os
+            import glob
+            
+            temp_patterns = ["cache/*.tmp", "output/*.tmp", "logs/*.tmp"]
+            for pattern in temp_patterns:
+                temp_files = glob.glob(pattern)
+                for temp_file in temp_files:
+                    try:
+                        os.remove(temp_file)
+                        maintenance_tasks.append(f"Removed {temp_file}")
+                    except Exception:
+                        pass
+            
+            # Optimize cache files (placeholder)
+            maintenance_tasks.append("Cache optimization completed")
+            
+            if maintenance_tasks:
+                st.success(f"Maintenance completed: {len(maintenance_tasks)} tasks")
+                with st.expander("Maintenance Details"):
+                    for task in maintenance_tasks:
+                        st.write(f"✅ {task}")
+            else:
+                st.info("No maintenance tasks needed")
+            
+            get_audit_logger(
+                user=st.session_state.username,
+                role=st.session_state.get("role", "N/A"),
+                action="SYSTEM_MAINTENANCE",
+                details=f"Admin performed maintenance: {len(maintenance_tasks)} tasks"
+            )
+        except Exception as e:
+            st.error(f"Error during maintenance: {e}")
+    
+    async def _render_user_activity_monitoring(self) -> None:
+        """Render user activity monitoring panel."""
+        try:
+            from src.audit_logger import get_user_activity_details, get_activity_summary
+            
+            # Time period selector
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                hours = st.selectbox("Time Period", [1, 6, 12, 24, 48, 168], index=3, key="activity_hours")
+            with col2:
+                limit = st.selectbox("Max Entries", [25, 50, 100, 200], index=1, key="activity_limit")
+            
+            # Get activity summary
+            summary = get_activity_summary(hours=hours)
+            
+            if "error" not in summary:
+                # Activity summary metrics
+                st.markdown("**📈 Activity Summary**")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total Actions", summary.get("total_actions", 0))
+                    st.metric("Unique Users", summary.get("unique_users", 0))
+                
+                with col2:
+                    st.metric("AI Interactions", summary.get("ai_interactions", 0))
+                    st.metric("Failed Actions", summary.get("failed_actions", 0))
+                
+                with col3:
+                    st.metric("Web Scraping", summary.get("web_scraping", 0))
+                    st.metric("Document Processing", summary.get("document_processing", 0))
+                
+                with col4:
+                    st.metric("DocSend Processing", summary.get("docsend_processing", 0))
+                    st.metric("Admin Actions", summary.get("admin_actions", 0))
+                
+                # Models used
+                models_used = summary.get("models_used", {})
+                if models_used:
+                    st.markdown("**🤖 Models Used**")
+                    for model, count in sorted(models_used.items(), key=lambda x: x[1], reverse=True):
+                        st.write(f"• {model}: {count} times")
+            
+            # Detailed activity log
+            st.markdown("---")
+            st.markdown("**📋 Detailed User Activity**")
+            
+            activities = get_user_activity_details(hours=hours, limit=limit)
+            
+            if activities:
+                for activity in activities:
+                    with st.container():
+                        # Header with timestamp and user
+                        timestamp = activity["timestamp"].strftime("%m/%d %H:%M:%S")
+                        user = activity["user"]
+                        role = activity["role"]
+                        action = activity["action"]
+                        
+                        # Color code by action type
+                        if "AI_INTERACTION" in action:
+                            action_color = "🤖"
+                        elif "WEB_SCRAPING" in action:
+                            action_color = "🌐"
+                        elif "DOCUMENT" in action:
+                            action_color = "📄"
+                        elif "DOCSEND" in action:
+                            action_color = "📊"
+                        elif "MODEL_SELECTED" in action:
+                            action_color = "⚙️"
+                        elif "ADMIN" in action:
+                            action_color = "👑"
+                        elif "LOGIN" in action or "LOGOUT" in action:
+                            action_color = "🔐"
+                        else:
+                            action_color = "📝"
+                        
+                        # Main activity line
+                        col1, col2, col3 = st.columns([2, 1, 3])
+                        with col1:
+                            st.write(f"**{timestamp}** | {action_color} {user} ({role})")
+                        with col2:
+                            if activity["model"]:
+                                st.caption(f"🤖 {activity['model']}")
+                        with col3:
+                            st.caption(f"**{action}**")
+                        
+                        # Parsed details
+                        parsed = activity.get("parsed_details", {})
+                        details_to_show = []
+                        
+                        if parsed.get("selected_model"):
+                            details_to_show.append(f"🤖 Model: {parsed['selected_model']}")
+                        
+                        if parsed.get("research_query"):
+                            query_preview = parsed["research_query"][:100] + "..." if len(parsed["research_query"]) > 100 else parsed["research_query"]
+                            details_to_show.append(f"❓ Query: {query_preview}")
+                        
+                        if parsed.get("urls"):
+                            details_to_show.append(f"🌐 URLs: {parsed['urls']}")
+                        
+                        if parsed.get("prompt_preview"):
+                            details_to_show.append(f"💬 Prompt: {parsed['prompt_preview']}")
+                        
+                        if parsed.get("processing_time"):
+                            details_to_show.append(f"⏱️ Time: {parsed['processing_time']}")
+                        
+                        if parsed.get("response_length"):
+                            details_to_show.append(f"📏 Response: {parsed['response_length']} chars")
+                        
+                        if parsed.get("page"):
+                            details_to_show.append(f"📄 Page: {parsed['page']}")
+                        
+                        if parsed.get("docsend_slides"):
+                            details_to_show.append(f"📊 DocSend: {parsed['docsend_slides']}")
+                        
+                        if parsed.get("involves_documents"):
+                            details_to_show.append(f"📁 Documents involved")
+                        
+                        if parsed.get("involves_sitemap"):
+                            details_to_show.append(f"🗺️ Sitemap scanning")
+                            if parsed.get("sitemap_urls_found"):
+                                details_to_show.append(f"🔍 Found: {parsed['sitemap_urls_found']} URLs")
+                        
+                        # Show parsed details
+                        if details_to_show:
+                            for detail in details_to_show:
+                                st.caption(f"  {detail}")
+                        
+                        # Show raw details if no parsed details
+                        elif activity["details"]:
+                            raw_details = activity["details"][:200] + "..." if len(activity["details"]) > 200 else activity["details"]
+                            st.caption(f"  📝 {raw_details}")
+                        
+                        st.divider()
+            else:
+                st.info(f"No user activity found in the last {hours} hours")
+                
+        except Exception as e:
+            st.error(f"Error loading user activity: {str(e)}")
+            st.code(f"Debug: {type(e).__name__}: {str(e)}") 

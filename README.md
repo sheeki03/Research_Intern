@@ -20,11 +20,7 @@ A comprehensive AI-powered research platform designed for due diligence, documen
 - **Automated Writing**: Generate and publish reports directly to Notion
 - **Real-time Monitoring**: Watch for changes and trigger automated workflows
 
-### 🧪 **Research Lab**
-- **Advanced API Integration**: Connect to external research APIs and services
-- **Custom Workflows**: Build and execute complex research pipelines
-- **Data Processing**: Advanced data manipulation and analysis tools
-- **Experimental Features**: Test new research methodologies and AI models
+
 
 ### 🔐 **Security & Authentication**
 - **User Authentication**: Secure login/signup with bcrypt password hashing
@@ -113,8 +109,7 @@ A comprehensive AI-powered research platform designed for due diligence, documen
 │   │   ├── __init__.py
 │   │   ├── base_page.py       # Base page class
 │   │   ├── interactive_research.py # Main research interface
-│   │   ├── notion_automation.py    # Notion automation features
-│   │   └── research_lab.py    # Advanced research tools
+│   │   └── notion_automation.py    # Notion automation features
 │   ├── core/                  # Core processing modules
 │   │   ├── __init__.py
 │   │   ├── docsend_client.py  # DocSend processing with OCR

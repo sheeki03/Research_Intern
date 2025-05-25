@@ -492,7 +492,8 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         
         if not selected_pages:
             st.info("💡 Select pages above to enable operations")
-            st.stop()
+            # Don't use st.stop() here as it prevents admin panel from rendering
+            return
         
         # Quick settings
         col1, col2 = st.columns([2, 1])

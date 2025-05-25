@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import io
 import re
 from urllib.parse import urlparse, urljoin
+from datetime import datetime
 
 try:
     import fitz  # PyMuPDF
@@ -34,6 +35,14 @@ from src.core.rag_utils import (
     TOP_K_RESULTS
 )
 from src.models.chat_models import ChatSession, ChatHistoryItem
+from src.audit_logger import (
+    get_audit_logger, 
+    log_ai_interaction, 
+    log_document_processing, 
+    log_web_scraping, 
+    log_docsend_processing, 
+    log_user_action
+)
 
 class InteractiveResearchPage(BasePage):
     """Interactive Research page with document processing and AI analysis."""
@@ -52,7 +61,7 @@ class InteractiveResearchPage(BasePage):
             return
         
         # Log page access
-        self.log_page_access()
+        self._log_page_access()
         
         # Initialize session state
         self._init_session_state()
@@ -87,11 +96,36 @@ class InteractiveResearchPage(BasePage):
         # Display generated report
         await self._render_report_display()
         
+        # Debug: Show current role for troubleshooting
+        current_role = st.session_state.get("role", "NOT_SET")
+        current_user = st.session_state.get("username", "NOT_SET")
+        
+        # Always show debug info for now
+        with st.expander("🔧 Debug Info", expanded=False):
+            st.write(f"**Current User:** {current_user}")
+            st.write(f"**Current Role:** {current_role}")
+            st.write(f"**Session State Keys:** {list(st.session_state.keys())}")
+            
+            # Show authentication status
+            auth_status = "✅ Authenticated" if st.session_state.get("authenticated") else "❌ Not Authenticated"
+            st.write(f"**Auth Status:** {auth_status}")
+        
         # Admin panel (if admin)
-        await self._render_admin_panel()
+        if st.session_state.get("role") == "admin":
+            await self._render_admin_panel()
         
         # Chat interface
         await self._render_chat_interface()
+    
+    def _log_page_access(self) -> None:
+        """Log user access to the Interactive Research page."""
+        log_user_action(
+            user=st.session_state.get('username', 'UNKNOWN'),
+            role=st.session_state.get('role', 'N/A'),
+            action="PAGE_ACCESS",
+            page="Interactive Research",
+            details="User accessed Interactive Research page"
+        )
     
     def _init_session_state(self) -> None:
         """Initialize required session state keys."""
@@ -162,6 +196,18 @@ class InteractiveResearchPage(BasePage):
                 selected_model_identifier = identifier
                 break
         
+        # Log model selection if changed
+        if st.session_state.get('previous_selected_model') != selected_model_identifier:
+            log_user_action(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                action="MODEL_SELECTED",
+                page="Interactive Research",
+                details=f"Selected AI model: {selected_model_display_name}",
+                additional_context={"model_identifier": selected_model_identifier}
+            )
+            st.session_state.previous_selected_model = selected_model_identifier
+        
         st.session_state.selected_model = selected_model_identifier
         st.markdown("---")
     
@@ -174,6 +220,22 @@ class InteractiveResearchPage(BasePage):
             key="research_query_input",
             help="Clearly state what you want the AI to investigate or analyze."
         )
+        
+        # Log research query input if provided and changed
+        if research_query and research_query != st.session_state.get('previous_research_query', ''):
+            log_user_action(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                action="RESEARCH_QUERY_INPUT",
+                page="Interactive Research",
+                details=f"Research query entered: {research_query[:100]}{'...' if len(research_query) > 100 else ''}",
+                additional_context={
+                    "query_length": len(research_query),
+                    "query_words": len(research_query.split())
+                }
+            )
+            st.session_state.previous_research_query = research_query
+        
         return research_query
     
     async def _render_document_upload(self) -> None:
@@ -212,11 +274,44 @@ class InteractiveResearchPage(BasePage):
                     if content:
                         processed_content.append({"name": file_data.name, "text": content})
                         self.show_success(f"Successfully processed: {file_data.name}")
+                        
+                        # Log successful document processing
+                        log_document_processing(
+                            user=st.session_state.get('username', 'UNKNOWN'),
+                            role=st.session_state.get('role', 'N/A'),
+                            filename=file_data.name,
+                            file_type=file_data.type or 'unknown',
+                            file_size=file_data.size,
+                            success=True,
+                            extracted_length=len(content)
+                        )
                     else:
                         self.show_error(f"Failed to extract content from: {file_data.name}")
                         
+                        # Log failed document processing
+                        log_document_processing(
+                            user=st.session_state.get('username', 'UNKNOWN'),
+                            role=st.session_state.get('role', 'N/A'),
+                            filename=file_data.name,
+                            file_type=file_data.type or 'unknown',
+                            file_size=file_data.size,
+                            success=False,
+                            extracted_length=0
+                        )
+                        
                 except Exception as e:
                     self.show_error(f"Error processing {file_data.name}: {str(e)}")
+                    
+                    # Log exception in document processing
+                    log_document_processing(
+                        user=st.session_state.get('username', 'UNKNOWN'),
+                        role=st.session_state.get('role', 'N/A'),
+                        filename=file_data.name,
+                        file_type=getattr(file_data, 'type', 'unknown'),
+                        file_size=getattr(file_data, 'size', 0),
+                        success=False,
+                        extracted_length=0
+                    )
             
             st.session_state.processed_documents_content = processed_content
             status.update(
@@ -306,6 +401,24 @@ class InteractiveResearchPage(BasePage):
         
         if urls_text_area:
             submitted_urls = [url.strip() for url in urls_text_area.split('\n') if url.strip()]
+            
+            # Log URL input if provided and changed
+            previous_urls = st.session_state.get('previous_urls_input', '')
+            if urls_text_area != previous_urls:
+                log_user_action(
+                    user=st.session_state.get('username', 'UNKNOWN'),
+                    role=st.session_state.get('role', 'N/A'),
+                    action="URLS_INPUT",
+                    page="Interactive Research",
+                    details=f"URLs entered: {len(submitted_urls)} URLs",
+                    additional_context={
+                        "urls": submitted_urls,
+                        "url_count": len(submitted_urls),
+                        "total_text_length": len(urls_text_area)
+                    }
+                )
+                st.session_state.previous_urls_input = urls_text_area
+            
             return submitted_urls
         return []
     
@@ -350,12 +463,36 @@ class InteractiveResearchPage(BasePage):
         st.session_state.sitemap_scan_error = None
         st.session_state.sitemap_scan_completed = False
         
+        # Log sitemap scan initiation
+        log_user_action(
+            user=st.session_state.get('username', 'UNKNOWN'),
+            role=st.session_state.get('role', 'N/A'),
+            action="SITEMAP_SCAN_INITIATED",
+            page="Interactive Research",
+            details=f"Sitemap scan started for: {site_url}",
+            additional_context={"target_url": site_url}
+        )
+        
         try:
             with st.spinner(f"Scanning {site_url} for sitemap URLs..."):
                 discovered_urls = await discover_sitemap_urls(site_url)
             
             st.session_state.discovered_sitemap_urls = discovered_urls
             st.session_state.sitemap_scan_completed = True
+            
+            # Log sitemap scan results
+            log_user_action(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                action="SITEMAP_SCAN_COMPLETED",
+                page="Interactive Research",
+                details=f"Sitemap scan completed: {len(discovered_urls)} URLs found",
+                additional_context={
+                    "target_url": site_url,
+                    "urls_found": len(discovered_urls),
+                    "discovered_urls": discovered_urls[:10] if discovered_urls else []  # Log first 10 URLs
+                }
+            )
             
             if discovered_urls:
                 self.show_success(f"Found {len(discovered_urls)} URLs!")
@@ -365,6 +502,17 @@ class InteractiveResearchPage(BasePage):
         except Exception as e:
             error_msg = f"Sitemap scan failed: {str(e)}"
             st.session_state.sitemap_scan_error = error_msg
+            
+            # Log sitemap scan failure
+            log_user_action(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                action="SITEMAP_SCAN_FAILED",
+                page="Interactive Research",
+                details=f"Sitemap scan failed for {site_url}: {error_msg}",
+                additional_context={"target_url": site_url, "error": str(e)}
+            )
+            
             self.show_error(error_msg)
             st.session_state.sitemap_scan_completed = True
         finally:
@@ -475,6 +623,19 @@ class InteractiveResearchPage(BasePage):
         # Process DocSend button
         if st.button("🔄 Process DocSend Deck", key="process_docsend_btn"):
             if docsend_url and docsend_email:
+                # Log DocSend input
+                log_user_action(
+                    user=st.session_state.get('username', 'UNKNOWN'),
+                    role=st.session_state.get('role', 'N/A'),
+                    action="DOCSEND_INPUT",
+                    page="Interactive Research",
+                    details=f"DocSend URL and credentials provided: {docsend_url}",
+                    additional_context={
+                        "docsend_url": docsend_url,
+                        "email": docsend_email,
+                        "password_provided": bool(docsend_password)
+                    }
+                )
                 await self._process_docsend_deck(docsend_url, docsend_email, docsend_password)
             else:
                 st.error("Please provide both DocSend URL and email")
@@ -538,17 +699,69 @@ class InteractiveResearchPage(BasePage):
                     
                     slides_processed = docsend_metadata.get('processed_slides', 0)
                     total_slides = docsend_metadata.get('total_slides', 0)
+                    processing_time = docsend_metadata.get('processing_time', 0.0)
+                    
+                    # Log successful DocSend processing
+                    log_docsend_processing(
+                        user=st.session_state.get('username', 'UNKNOWN'),
+                        role=st.session_state.get('role', 'N/A'),
+                        docsend_url=url,
+                        slides_processed=slides_processed,
+                        total_slides=total_slides,
+                        processing_time=processing_time,
+                        success=True,
+                        extracted_length=len(docsend_content)
+                    )
                     
                     self.show_success(f"✅ DocSend processing complete: {slides_processed}/{total_slides} slides processed")
                     st.rerun()
                 else:
                     error_msg = result.get('error', 'Unknown error')
+                    
+                    # Log failed DocSend processing
+                    log_docsend_processing(
+                        user=st.session_state.get('username', 'UNKNOWN'),
+                        role=st.session_state.get('role', 'N/A'),
+                        docsend_url=url,
+                        slides_processed=0,
+                        total_slides=0,
+                        processing_time=0.0,
+                        success=False,
+                        extracted_length=0
+                    )
+                    
                     self.show_error(f"DocSend processing failed: {error_msg}")
                     
         except ImportError:
             self.show_error("DocSend dependencies not installed. Run: pip install -r requirements_docsend.txt")
+            
+            # Log import error
+            log_docsend_processing(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                docsend_url=url,
+                slides_processed=0,
+                total_slides=0,
+                processing_time=0.0,
+                success=False,
+                extracted_length=0
+            )
+            
         except Exception as e:
             self.show_error(f"DocSend processing error: {str(e)}")
+            
+            # Log exception in DocSend processing
+            log_docsend_processing(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                docsend_url=url,
+                slides_processed=0,
+                total_slides=0,
+                processing_time=0.0,
+                success=False,
+                extracted_length=0
+            )
+            
             # Add more detailed error logging
             import traceback
             print(f"DocSend processing exception: {traceback.format_exc()}")
@@ -635,8 +848,13 @@ class InteractiveResearchPage(BasePage):
             return []
         
         try:
+            import time
+            start_time = time.time()
+            
             results = await st.session_state.firecrawl_client.scrape_multiple_urls(urls)
             processed_results = []
+            success_count = 0
+            failed_count = 0
             
             for result in results:
                 url = result.get("metadata", {}).get("url", result.get("url", "unknown"))
@@ -645,12 +863,37 @@ class InteractiveResearchPage(BasePage):
                     if not content:
                         content = result.get("content", "")
                     processed_results.append({"url": url, "content": content, "status": "success"})
+                    success_count += 1
                 else:
                     error = result.get("error", "Unknown error")
                     processed_results.append({"url": url, "error": error, "status": "failed"})
+                    failed_count += 1
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            
+            # Log web scraping activity
+            log_web_scraping(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                urls=urls,
+                success_count=success_count,
+                failed_count=failed_count,
+                processing_time=processing_time
+            )
             
             return processed_results
         except Exception as e:
+            # Log failed web scraping
+            log_web_scraping(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                urls=urls,
+                success_count=0,
+                failed_count=len(urls),
+                processing_time=0.0
+            )
+            
             self.show_error(f"Error scraping URLs: {str(e)}")
             return []
     
@@ -721,15 +964,46 @@ class InteractiveResearchPage(BasePage):
             model_to_use = st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL)
             system_prompt = st.session_state.get("system_prompt", "You are a helpful research assistant.")
             
+            # Record start time for processing time calculation
+            import time
+            start_time = time.time()
+            
             response = await st.session_state.openrouter_client.generate_response(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 model_override=model_to_use
             )
             
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            
+            # Log AI interaction
+            log_ai_interaction(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                model=model_to_use,
+                prompt=prompt,
+                response=response or "",
+                processing_time=processing_time,
+                page="Interactive Research",
+                success=bool(response)
+            )
+            
             return response or ""
             
         except Exception as e:
+            # Log failed AI interaction
+            log_ai_interaction(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                model=st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL),
+                prompt=prompt,
+                response="",
+                processing_time=0.0,
+                page="Interactive Research",
+                success=False
+            )
+            
             self.show_error(f"Error calling AI: {str(e)}")
             return ""
     
@@ -795,11 +1069,227 @@ class InteractiveResearchPage(BasePage):
             )
     
     async def _render_admin_panel(self) -> None:
-        """Render admin panel if user is admin."""
+        """Render comprehensive admin panel if user is admin."""
         if st.session_state.get("role") == "admin":
             st.markdown("---")
-            st.subheader("Admin Panel")
-            st.info("Admin panel features would be implemented here.")
+            st.subheader("🔧 Admin Panel")
+            
+            # Environment Status
+            import os
+            required_vars = ["OPENROUTER_API_KEY"]
+            optional_vars = ["FIRECRAWL_API_URL", "REDIS_URL", "TESSERACT_CMD"]
+            
+            missing_required = [var for var in required_vars if not os.getenv(var)]
+            missing_optional = [var for var in optional_vars if not os.getenv(var)]
+            
+            if missing_required:
+                st.error(f"❌ Missing required environment variables: {', '.join(missing_required)}")
+            else:
+                st.success("✅ Required environment configured correctly")
+            
+            if missing_optional:
+                st.warning(f"⚠️ Optional environment variables not set: {', '.join(missing_optional)}")
+            
+            # System Status Section
+            st.markdown("### 📊 **System Status**")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Document processing stats
+                docs_processed = len(st.session_state.get('processed_documents_content', []))
+                st.metric("Documents Processed", docs_processed)
+                
+                # Web content stats
+                web_scraped = len(st.session_state.get('scraped_web_content', []))
+                web_crawled = len(st.session_state.get('crawled_web_content', []))
+                total_web = web_scraped + web_crawled
+                st.metric("Web Sources", total_web)
+            
+            with col2:
+                # DocSend status
+                docsend_processed = 1 if st.session_state.get('docsend_content') else 0
+                st.metric("DocSend Decks", docsend_processed)
+                
+                # Reports generated
+                reports_generated = 1 if st.session_state.get('unified_report_content') else 0
+                st.metric("Reports Generated", reports_generated)
+            
+            with col3:
+                # RAG contexts
+                rag_contexts = len(st.session_state.get('rag_contexts', {}))
+                st.metric("RAG Contexts", rag_contexts)
+                
+                # Current model
+                current_model = st.session_state.get('selected_model', 'Not Set')
+                model_display = current_model.split('/')[-1] if '/' in current_model else current_model
+                st.metric("Current AI Model", model_display)
+            
+            st.markdown("---")
+            
+            # Cache Management Section
+            st.markdown("### 🗃️ **Cache Management**")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**Document Cache**")
+                if st.button("🗑️ Clear Documents", key="admin_clear_docs"):
+                    st.session_state.processed_documents_content = []
+                    st.session_state.uploaded_files_content = []
+                    self.show_success("Document cache cleared!")
+            
+            with col2:
+                st.markdown("**Web Content Cache**")
+                if st.button("🗑️ Clear Web Content", key="admin_clear_web"):
+                    st.session_state.scraped_web_content = []
+                    st.session_state.crawled_web_content = []
+                    st.session_state.sitemap_urls = []
+                    st.session_state.selected_sitemap_urls = set()
+                    self.show_success("Web content cache cleared!")
+            
+            with col3:
+                st.markdown("**DocSend Cache**")
+                if st.button("🗑️ Clear DocSend", key="admin_clear_docsend"):
+                    st.session_state.docsend_content = ""
+                    st.session_state.docsend_metadata = {}
+                    self.show_success("DocSend cache cleared!")
+            
+            # System-wide cache clear
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🧹 Clear All Caches", key="admin_clear_all", type="primary"):
+                    # Clear all research-related session state
+                    cache_keys = [
+                        'processed_documents_content', 'uploaded_files_content',
+                        'scraped_web_content', 'crawled_web_content',
+                        'docsend_content', 'docsend_metadata',
+                        'unified_report_content', 'rag_contexts',
+                        'sitemap_urls', 'selected_sitemap_urls',
+                        'research_query_input', 'urls_input'
+                    ]
+                    for key in cache_keys:
+                        if key in st.session_state:
+                            if 'content' in key and key.endswith('_content'):
+                                st.session_state[key] = [] if isinstance(st.session_state[key], list) else ""
+                            elif 'contexts' in key:
+                                st.session_state[key] = {}
+                            elif 'urls' in key:
+                                st.session_state[key] = [] if 'selected' not in key else set()
+                            else:
+                                st.session_state[key] = [] if isinstance(st.session_state[key], list) else ""
+                    
+                    self.show_success("All caches cleared successfully!")
+            
+            with col2:
+                if st.button("🔄 Reset Session", key="admin_reset_session"):
+                    # Reset to initial state but keep authentication
+                    auth_keys = ['authenticated', 'username', 'role', 'system_prompt']
+                    auth_values = {key: st.session_state.get(key) for key in auth_keys}
+                    
+                    # Clear all session state
+                    for key in list(st.session_state.keys()):
+                        if key not in auth_keys:
+                            del st.session_state[key]
+                    
+                    # Restore authentication
+                    for key, value in auth_values.items():
+                        if value is not None:
+                            st.session_state[key] = value
+                    
+                    self.show_success("Session reset! Page will reload.")
+                    st.rerun()
+            
+            st.markdown("---")
+            
+            # Client Status Section
+            st.markdown("### 🔌 **Client Status**")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**OpenRouter Client**")
+                openrouter_status = "✅ Connected" if st.session_state.get('openrouter_client') else "❌ Not Connected"
+                st.write(openrouter_status)
+                
+                if st.button("🔄 Reconnect OpenRouter", key="admin_reconnect_openrouter"):
+                    self._init_clients()
+                    if st.session_state.get('openrouter_client'):
+                        self.show_success("OpenRouter client reconnected!")
+                    else:
+                        self.show_error("Failed to reconnect OpenRouter client")
+            
+            with col2:
+                st.markdown("**Firecrawl Client**")
+                firecrawl_status = "✅ Connected" if st.session_state.get('firecrawl_client') else "❌ Not Connected"
+                st.write(firecrawl_status)
+                
+                if st.button("🔄 Reconnect Firecrawl", key="admin_reconnect_firecrawl"):
+                    self._init_clients()
+                    if st.session_state.get('firecrawl_client'):
+                        self.show_success("Firecrawl client reconnected!")
+                    else:
+                        self.show_warning("Firecrawl client not available (optional)")
+            
+            st.markdown("---")
+            
+            # System Information
+            st.markdown("### ℹ️ **System Information**")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Session Information**")
+                st.code(f"""
+Session ID: {id(st.session_state)}
+User: {st.session_state.get('username', 'Unknown')}
+Role: {st.session_state.get('role', 'Unknown')}
+Page: Interactive Research
+                """)
+            
+            with col2:
+                st.markdown("**Environment Information**")
+                import platform
+                st.code(f"""
+Platform: {platform.system()} {platform.release()}
+Python: {platform.python_version()}
+Streamlit: {st.__version__}
+                """)
+            
+            # Debug Information (expandable)
+            with st.expander("🐛 Debug Information", expanded=False):
+                st.markdown("**Session State Keys**")
+                session_keys = list(st.session_state.keys())
+                st.write(f"Total keys: {len(session_keys)}")
+                
+                # Group keys by category
+                auth_keys = [k for k in session_keys if any(x in k.lower() for x in ['auth', 'user', 'role', 'login'])]
+                research_keys = [k for k in session_keys if any(x in k.lower() for x in ['research', 'document', 'web', 'docsend', 'report'])]
+                client_keys = [k for k in session_keys if any(x in k.lower() for x in ['client', 'openrouter', 'firecrawl'])]
+                other_keys = [k for k in session_keys if k not in auth_keys + research_keys + client_keys]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Authentication Keys**")
+                    for key in auth_keys:
+                        st.code(f"• {key}")
+                    
+                    st.markdown("**Research Keys**")
+                    for key in research_keys[:10]:  # Limit display
+                        st.code(f"• {key}")
+                    if len(research_keys) > 10:
+                        st.caption(f"... and {len(research_keys) - 10} more")
+                
+                with col2:
+                    st.markdown("**Client Keys**")
+                    for key in client_keys:
+                        st.code(f"• {key}")
+                    
+                    st.markdown("**Other Keys**")
+                    for key in other_keys[:10]:  # Limit display
+                        st.code(f"• {key}")
+                    if len(other_keys) > 10:
+                        st.caption(f"... and {len(other_keys) - 10} more")
     
     async def _render_chat_interface(self) -> None:
         """Render chat interface if report is generated."""
@@ -808,5 +1298,234 @@ class InteractiveResearchPage(BasePage):
             
             st.markdown("---")
             with st.expander("💬 Chat with AI about this Report", expanded=False):
-                st.info("Chat interface would be implemented here.")
-                # Chat implementation would go here 
+                report_id = st.session_state.current_report_id_for_chat
+                
+                st.success("💬 **Chat Ready** - Ask questions about your research report, documents, and web sources!")
+                
+                # Chat input
+                user_question = st.text_input(
+                    "Ask a question about the report:",
+                    key="interactive_chat_input",
+                    placeholder="What are the key findings? Can you summarize the main points?"
+                )
+                
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    if st.button("💬 Ask", key="interactive_chat_ask_btn"):
+                        if user_question:
+                            # Log chat question input
+                            log_user_action(
+                                user=st.session_state.get('username', 'UNKNOWN'),
+                                role=st.session_state.get('role', 'N/A'),
+                                action="CHAT_QUESTION_INPUT",
+                                page="Interactive Research - Chat",
+                                details=f"Chat question asked: {user_question[:100]}{'...' if len(user_question) > 100 else ''}",
+                                additional_context={
+                                    "question_length": len(user_question),
+                                    "question_words": len(user_question.split()),
+                                    "report_id": report_id
+                                }
+                            )
+                            await self._process_chat_question(user_question, report_id)
+                        else:
+                            st.warning("Please enter a question.")
+                
+                with col2:
+                    if st.button("🧹 Clear Chat", key="interactive_clear_chat_btn"):
+                        if 'interactive_chat_sessions' not in st.session_state:
+                            st.session_state.interactive_chat_sessions = {}
+                        st.session_state.interactive_chat_sessions[report_id] = []
+                        self.show_success("Chat cleared!")
+                
+                # Display chat history
+                self._display_chat_history(report_id)
+    
+    async def _process_chat_question(self, question: str, report_id: str) -> None:
+        """Process a chat question using RAG context or direct AI analysis."""
+        try:
+            with st.spinner("🤔 AI is thinking..."):
+                # Initialize chat sessions if not exists
+                if 'interactive_chat_sessions' not in st.session_state:
+                    st.session_state.interactive_chat_sessions = {}
+                if report_id not in st.session_state.interactive_chat_sessions:
+                    st.session_state.interactive_chat_sessions[report_id] = []
+                
+                rag_context = st.session_state.get('rag_contexts', {}).get(report_id)
+                client = st.session_state.get('openrouter_client')
+                
+                if not client:
+                    self.show_error("OpenRouter client not available")
+                    return
+                
+                response_method = "Direct Analysis"
+                
+                if rag_context:
+                    # RAG-based response (preferred when available)
+                    try:
+                        from src.core.rag_utils import get_embedding_model, search_faiss_index, TOP_K_RESULTS
+                        
+                        embedding_model = get_embedding_model()
+                        relevant_chunks = search_faiss_index(
+                            question,
+                            rag_context["index"],
+                            rag_context["chunks"],
+                            embedding_model,
+                            top_k=TOP_K_RESULTS
+                        )
+                        
+                        # Build context for AI
+                        context = "\n\n".join([chunk["text"] for chunk in relevant_chunks])
+                        
+                        prompt = f"""Based on the following context from the research report, please answer the user's question.
+                        
+Context:
+{context}
+
+Question: {question}
+
+Please provide a helpful and accurate answer based on the context provided."""
+                        
+                        system_prompt = "You are a helpful research assistant. Answer questions based on the provided context."
+                        response_method = "RAG-enhanced"
+                        
+                    except Exception as rag_error:
+                        # RAG failed, fall back to direct analysis
+                        st.warning(f"RAG processing failed: {str(rag_error)}. Using direct analysis.")
+                        rag_context = None
+                
+                if not rag_context:
+                    # Direct analysis using all available content
+                    relevant_content = self._get_relevant_content_for_question(question)
+                    
+                    prompt = f"""Based on the research content provided below, please answer the user's question.
+
+Research Content:
+{relevant_content}
+
+Question: {question}
+
+Please provide a comprehensive answer based on the research content."""
+                    
+                    system_prompt = st.session_state.get("system_prompt", "You are a helpful research assistant.")
+                
+                # Get AI response
+                model_to_use = st.session_state.get("selected_model", "openai/gpt-4o")
+                
+                start_time = time.time()
+                response = await client.generate_response(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_override=model_to_use
+                )
+                processing_time = time.time() - start_time
+                
+                if response:
+                    # Log successful chat interaction
+                    log_ai_interaction(
+                        user=st.session_state.get('username', 'UNKNOWN'),
+                        role=st.session_state.get('role', 'N/A'),
+                        model=model_to_use,
+                        prompt=prompt,
+                        response=response,
+                        processing_time=processing_time,
+                        page="Interactive Research - Chat",
+                        success=True
+                    )
+                    
+                    # Add to chat history
+                    chat_entry = {
+                        "question": question,
+                        "answer": response,
+                        "method": response_method,
+                        "timestamp": datetime.now().strftime("%H:%M:%S")
+                    }
+                    st.session_state.interactive_chat_sessions[report_id].append(chat_entry)
+                    
+                    # Clear input
+                    st.session_state.interactive_chat_input = ""
+                    st.rerun()
+                else:
+                    # Log failed chat interaction
+                    log_ai_interaction(
+                        user=st.session_state.get('username', 'UNKNOWN'),
+                        role=st.session_state.get('role', 'N/A'),
+                        model=model_to_use,
+                        prompt=prompt,
+                        response="",
+                        processing_time=processing_time,
+                        page="Interactive Research - Chat",
+                        success=False
+                    )
+                    self.show_error("Failed to get AI response")
+                    
+        except Exception as e:
+            # Log chat processing error
+            log_user_action(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                action="CHAT_PROCESSING_ERROR",
+                page="Interactive Research - Chat",
+                details=f"Chat processing failed: {str(e)}",
+                additional_context={
+                    "question": question[:200] + "..." if len(question) > 200 else question,
+                    "error": str(e),
+                    "report_id": report_id
+                }
+            )
+            self.show_error(f"Error processing chat question: {str(e)}")
+    
+    def _get_relevant_content_for_question(self, question: str) -> str:
+        """Get relevant content for answering the question."""
+        content_parts = []
+        
+        # Add report content
+        if st.session_state.get('unified_report_content'):
+            content_parts.append(f"--- Generated Report ---\n{st.session_state.unified_report_content}")
+        
+        # Add document content
+        for doc in st.session_state.get('processed_documents_content', []):
+            content_parts.append(f"--- Document: {doc['name']} ---\n{doc['text']}")
+        
+        # Add web content
+        for item in st.session_state.get('scraped_web_content', []):
+            if item.get("status") == "success" and item.get("content"):
+                content_parts.append(f"--- Web: {item['url']} ---\n{item['content']}")
+        
+        for item in st.session_state.get('crawled_web_content', []):
+            if item.get("status") == "success" and item.get("content"):
+                content_parts.append(f"--- Crawled: {item['url']} ---\n{item['content']}")
+        
+        # Add DocSend content
+        docsend_content = st.session_state.get('docsend_content', '')
+        if docsend_content:
+            docsend_metadata = st.session_state.get('docsend_metadata', {})
+            docsend_url = docsend_metadata.get('url', 'Unknown')
+            content_parts.append(f"--- DocSend: {docsend_url} ---\n{docsend_content}")
+        
+        return "\n\n".join(content_parts)
+    
+    def _display_chat_history(self, report_id: str) -> None:
+        """Display chat history for the report."""
+        if 'interactive_chat_sessions' not in st.session_state:
+            st.session_state.interactive_chat_sessions = {}
+        
+        chat_history = st.session_state.interactive_chat_sessions.get(report_id, [])
+        
+        if chat_history:
+            st.markdown("### 💬 Chat History")
+            
+            for i, entry in enumerate(reversed(chat_history[-10:])):  # Show last 10 messages
+                with st.container():
+                    st.markdown(f"**🙋 Question ({entry['timestamp']}):**")
+                    st.markdown(f"> {entry['question']}")
+                    
+                    st.markdown(f"**🤖 Answer ({entry['method']}):**")
+                    st.markdown(entry['answer'])
+                    
+                    if i < len(chat_history) - 1:
+                        st.markdown("---")
+            
+            if len(chat_history) > 10:
+                st.caption(f"Showing last 10 of {len(chat_history)} messages")
+        else:
+            st.info("No chat history yet. Ask a question to get started!") 
