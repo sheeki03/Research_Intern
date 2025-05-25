@@ -78,6 +78,9 @@ class InteractiveResearchPage(BasePage):
         # Crawl & scrape
         await self._render_crawl_section()
         
+        # DocSend decks
+        await self._render_docsend_section()
+        
         # Report generation
         await self._render_report_generation()
         
@@ -111,6 +114,8 @@ class InteractiveResearchPage(BasePage):
             'chat_ui_expanded': False,
             'ai_is_thinking': False,
             'last_user_prompt_for_processing': None,
+            'docsend_content': '',
+            'docsend_metadata': {},
         }
         self.init_session_state(required_keys)
     
@@ -416,7 +421,7 @@ class InteractiveResearchPage(BasePage):
     
     async def _render_report_generation(self) -> None:
         """Render the report generation section."""
-        st.subheader("5. Generate Report")
+        st.subheader("6. Generate Report")
         
         if st.button("Generate Unified Report", key="generate_report_btn"):
             await self._generate_report()

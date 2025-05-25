@@ -47,7 +47,7 @@ from src.core.rag_utils import (
 from src.models.chat_models import ChatSession, ChatHistoryItem, ChatMessageInput, ChatMessageOutput
 
 # Cache configuration
-CACHE_DURATION_HOURS = 6
+CACHE_DURATION_HOURS = 12
 CACHE_FILE_PATH = "cache/notion_pages_cache.pkl"
 
 class NotionAutomationPage(BasePage):
@@ -65,7 +65,7 @@ class NotionAutomationPage(BasePage):
                 with open(CACHE_FILE_PATH, 'rb') as f:
                     cache_data = pickle.load(f)
                 
-                # Check if cache is still valid (within 6 hours)
+                # Check if cache is still valid (within 12 hours)
                 cache_time = cache_data.get('timestamp')
                 if cache_time:
                     cache_dt = datetime.fromisoformat(cache_time)
@@ -227,6 +227,10 @@ class NotionAutomationPage(BasePage):
             'notion_last_user_prompt_for_processing': None,
             'notion_processed_documents_content': [],
             'notion_last_uploaded_file_details': [],
+            'notion_scraped_web_content': [],
+            'notion_crawled_web_content': [],
+            'notion_docsend_content': '',
+            'notion_docsend_metadata': {},
         }
         self.init_session_state(required_keys)
     
@@ -575,6 +579,11 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             'notion_crawl_option': None,
             'notion_crawl_url': '',
             'notion_crawl_sitemap_url': '',
+            'notion_docsend_url': '',
+            'notion_docsend_email': '',
+            'notion_docsend_password': '',
+            'notion_docsend_content': '',
+            'notion_docsend_metadata': {},
             'notion_selected_model': 'qwen/qwen3-30b-a3b:free'
         }
         self.init_session_state(additional_sources_keys)
@@ -583,7 +592,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         with st.expander("# 📚 **Configure Additional Sources**", expanded=False):
             
             # Create tabs for different source types
-            tab1, tab2, tab3, tab4 = st.tabs(["## 📄 Documents", "## 🌐 Web URLs", "## 🕷️ Site Crawling", "## 🤖 AI Model"])
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["## 📄 Documents", "## 🌐 Web URLs", "## 🕷️ Site Crawling", "## 📊 DocSend Decks", "## 🤖 AI Model"])
             
             with tab1:
                 st.markdown("### 📄 Upload Additional Documents")
@@ -686,6 +695,58 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.info(f"🔍 Will crawl from: {crawl_url} (max {max_pages} pages, depth {max_depth})")
             
             with tab4:
+                st.markdown("### 📊 DocSend Presentation Decks")
+                st.write("Extract text from DocSend presentation slides using OCR")
+                
+                docsend_url = st.text_input(
+                    "DocSend URL:",
+                    key="notion_docsend_url",
+                    placeholder="https://docsend.com/view/..."
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    docsend_email = st.text_input(
+                        "Email:",
+                        key="notion_docsend_email",
+                        value=st.session_state.get('notion_docsend_email', ''),
+                        placeholder="your@email.com"
+                    )
+                
+                with col2:
+                    docsend_password = st.text_input(
+                        "Password (if required):",
+                        key="notion_docsend_password",
+                        type="password",
+                        placeholder="Optional password"
+                    )
+                
+                # Show status if DocSend content is cached
+                if st.session_state.get('notion_docsend_content'):
+                    docsend_metadata = st.session_state.get('notion_docsend_metadata', {})
+                    slides_processed = docsend_metadata.get('processed_slides', 0)
+                    total_slides = docsend_metadata.get('total_slides', 0)
+                    processing_time = docsend_metadata.get('processing_time', 0)
+                    
+                    st.success(f"✅ DocSend deck processed: {slides_processed}/{total_slides} slides ({processing_time:.1f}s)")
+                    
+                    with st.expander("## 📋 DocSend Processing Details", expanded=False):
+                        st.write(f"**URL:** {docsend_metadata.get('url', 'Unknown')}")
+                        st.write(f"**Total slides:** {total_slides}")
+                        st.write(f"**Slides with text:** {docsend_metadata.get('slides_with_text', 0)}")
+                        st.write(f"**Total characters:** {docsend_metadata.get('total_characters', 0):,}")
+                        st.write(f"**Processing time:** {processing_time:.1f} seconds")
+                        
+                        # Show preview of extracted content
+                        content_preview = st.session_state.notion_docsend_content[:500]
+                        st.text_area("Content preview:", content_preview, height=100, disabled=True)
+                
+                elif docsend_url:
+                    st.info(f"📊 Will process DocSend deck: {docsend_url}")
+                    if not docsend_email:
+                        st.warning("⚠️ Email is required for DocSend access")
+            
+            with tab5:
                 st.markdown("### 🤖 AI Model Selection")
                 st.write("Choose the AI model for research and analysis")
                 
@@ -715,6 +776,8 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             sources.append(f"🌐 {url_count} web URLs")
         if st.session_state.get('notion_crawl_option', 'None') != 'None':
             sources.append(f"🕷️ Website crawling")
+        if st.session_state.get('notion_docsend_url'):
+            sources.append(f"📊 DocSend deck")
         
         if sources:
             st.success(f"**Research will include:** {' + '.join(sources)}")
@@ -949,6 +1012,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             uploaded_docs = st.session_state.get('notion_uploaded_docs', [])
             web_urls = st.session_state.get('notion_web_urls', [])
             crawl_option = st.session_state.get('notion_crawl_option', 'None')
+            docsend_url = st.session_state.get('notion_docsend_url', '')
+            docsend_email = st.session_state.get('notion_docsend_email', '')
+            docsend_password = st.session_state.get('notion_docsend_password', '')
             selected_model = st.session_state.get('notion_selected_model', 'qwen/qwen3-30b-a3b:free')
             
             with st.spinner("🔬 Running enhanced research pipeline... (might be slow, please have patience)"):
@@ -956,7 +1022,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 
                 # Step 1: Process additional sources first
                 additional_content = await self._process_additional_sources(
-                    uploaded_docs, web_urls, crawl_option
+                    uploaded_docs, web_urls, crawl_option, docsend_url, docsend_email, docsend_password
                 )
                 
                 # Step 2: Process each selected page
@@ -1012,7 +1078,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                                 'status': 'Success',
                                 'report_path': str(report_path),
                                 'file_size': file_size,
-                                'sources_used': self._get_sources_summary(uploaded_docs, web_urls, crawl_option),
+                                'sources_used': self._get_sources_summary(uploaded_docs, web_urls, crawl_option, docsend_url),
                                 'model_used': selected_model,
                                 'notion_url': st.session_state.get('notion_published_report_url'),
                                 'auto_publish_enabled': st.session_state.get('notion_auto_publish_to_notion', False),
@@ -1058,7 +1124,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 with col2:
                     st.metric("❌ Failed", failed)
                 with col3:
-                    sources_count = len(uploaded_docs) + len(web_urls) + (1 if crawl_option != 'None' else 0)
+                    sources_count = len(uploaded_docs) + len(web_urls) + (1 if crawl_option != 'None' else 0) + (1 if docsend_url else 0)
                     st.metric("📚 Extra Sources", sources_count)
                 
                 # Show individual results
@@ -1103,12 +1169,14 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             with st.expander("🐛 Error Details"):
                 st.code(str(e))
     
-    async def _process_additional_sources(self, uploaded_docs, web_urls, crawl_option):
+    async def _process_additional_sources(self, uploaded_docs, web_urls, crawl_option, 
+                                         docsend_url='', docsend_email='', docsend_password=''):
         """Process additional research sources and return combined content."""
         additional_content = {
             'documents': [],
             'web_pages': [],
-            'crawled_pages': []
+            'crawled_pages': [],
+            'docsend_decks': []
         }
         
         # Process uploaded documents with proper extraction
@@ -1192,7 +1260,358 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             except Exception as e:
                 st.warning(f"Crawling failed: {str(e)}")
         
+        # Process DocSend deck if URL provided
+        if docsend_url and docsend_email:
+            self._update_progress(50, "Processing DocSend deck...")
+            try:
+                # Check if we already have cached DocSend content for this URL
+                cached_url = st.session_state.get('notion_docsend_metadata', {}).get('url', '')
+                if cached_url == docsend_url and st.session_state.get('notion_docsend_content'):
+                    # Use cached content
+                    docsend_content = st.session_state.notion_docsend_content
+                    docsend_metadata = st.session_state.notion_docsend_metadata
+                    
+                    additional_content['docsend_decks'].append({
+                        'url': docsend_url,
+                        'content': docsend_content,
+                        'metadata': docsend_metadata
+                    })
+                    
+                    self._update_progress(60, f"Using cached DocSend content ({docsend_metadata.get('processed_slides', 0)} slides)")
+                else:
+                    # Process fresh DocSend content
+                    from src.core.docsend_client import DocSendClient
+                    
+                    # Initialize DocSend client
+                    tesseract_cmd = os.getenv('TESSERACT_CMD')
+                    docsend_client = DocSendClient(tesseract_cmd=tesseract_cmd)
+                    
+                    # Process with progress callback
+                    def progress_callback(percentage, status):
+                        self._update_progress(50 + int(percentage * 0.4), status)  # 50-90% range
+                    
+                    result = await docsend_client.fetch_docsend_async(
+                        url=docsend_url,
+                        email=docsend_email,
+                        password=docsend_password if docsend_password else None,
+                        progress_callback=progress_callback
+                    )
+                    
+                    if result.get('success'):
+                        docsend_content = result['content']
+                        docsend_metadata = result['metadata']
+                        
+                        # Cache the results
+                        st.session_state.notion_docsend_content = docsend_content
+                        st.session_state.notion_docsend_metadata = docsend_metadata
+                        
+                        additional_content['docsend_decks'].append({
+                            'url': docsend_url,
+                            'content': docsend_content,
+                            'metadata': docsend_metadata
+                        })
+                        
+                        slides_processed = docsend_metadata.get('processed_slides', 0)
+                        total_slides = docsend_metadata.get('total_slides', 0)
+                        self._update_progress(90, f"DocSend processing complete: {slides_processed}/{total_slides} slides")
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        st.warning(f"DocSend processing failed: {error_msg}")
+                        self._update_progress(60, f"DocSend processing failed: {error_msg}")
+                        
+            except Exception as e:
+                st.warning(f"DocSend processing error: {str(e)}")
+                self._update_progress(60, f"DocSend error: {str(e)}")
+        
+        # Store scraped web content with improved chunked storage for chat use
+        st.session_state.notion_scraped_web_content = self._process_scraped_content_for_storage(additional_content['web_pages'])
+        st.session_state.notion_crawled_web_content = self._process_scraped_content_for_storage(additional_content['crawled_pages'])
+        
         return additional_content
+    
+    def _process_scraped_content_for_storage(self, content_list: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+        """Process scraped content into chunked storage with metadata for better AI analysis."""
+        processed_content = []
+        
+        for item in content_list:
+            url = item.get('url', 'Unknown URL')
+            content = item.get('content', '')
+            
+            # Skip empty content
+            if not content or len(content.strip()) < 50:
+                continue
+            
+            # Create chunks of reasonable size (1000-2000 chars for better AI processing)
+            chunks = self._create_semantic_chunks(content, max_chunk_size=1500)
+            
+            # Extract metadata from content
+            metadata = self._extract_content_metadata(content, url)
+            
+            processed_item = {
+                'url': url,
+                'original_content': content,  # Keep full content for reference
+                'chunks': chunks,
+                'metadata': metadata,
+                'chunk_count': len(chunks),
+                'total_length': len(content),
+                'processed_at': pd.Timestamp.now().isoformat()
+            }
+            
+            processed_content.append(processed_item)
+        
+        return processed_content
+    
+    def _create_semantic_chunks(self, content: str, max_chunk_size: int = 1500) -> List[Dict[str, Any]]:
+        """Create semantic chunks from content, preserving context and meaning."""
+        chunks = []
+        
+        # Split by paragraphs first to maintain context
+        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        
+        current_chunk = ""
+        current_chunk_id = 0
+        
+        for paragraph in paragraphs:
+            # If adding this paragraph would exceed max size, finalize current chunk
+            if len(current_chunk) + len(paragraph) > max_chunk_size and current_chunk:
+                chunks.append({
+                    'chunk_id': current_chunk_id,
+                    'text': current_chunk.strip(),
+                    'length': len(current_chunk),
+                    'topic_hints': self._extract_topic_hints(current_chunk)
+                })
+                current_chunk = ""
+                current_chunk_id += 1
+            
+            # Add paragraph to current chunk
+            if current_chunk:
+                current_chunk += "\n\n" + paragraph
+            else:
+                current_chunk = paragraph
+        
+        # Add final chunk if there's remaining content
+        if current_chunk.strip():
+            chunks.append({
+                'chunk_id': current_chunk_id,
+                'text': current_chunk.strip(),
+                'length': len(current_chunk),
+                'topic_hints': self._extract_topic_hints(current_chunk)
+            })
+        
+        return chunks
+    
+    def _extract_content_metadata(self, content: str, url: str) -> Dict[str, Any]:
+        """Extract useful metadata from scraped content."""
+        import re
+        from urllib.parse import urlparse
+        
+        # Parse URL for context
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc
+        
+        # Extract potential title (first line or heading)
+        lines = content.split('\n')
+        title = next((line.strip() for line in lines if line.strip() and len(line.strip()) > 10), "")[:100]
+        
+        # Extract key terms and topics
+        content_lower = content.lower()
+        keywords = []
+        
+        # Look for common crypto/business terms
+        key_terms = [
+            'token', 'blockchain', 'defi', 'nft', 'smart contract', 'governance',
+            'roadmap', 'whitepaper', 'team', 'funding', 'partnership', 'api',
+            'technical', 'documentation', 'security', 'audit', 'tokenomics'
+        ]
+        
+        for term in key_terms:
+            if term in content_lower:
+                keywords.append(term)
+        
+        # Determine content type based on URL and content
+        content_type = 'general'
+        if 'docs' in url or 'documentation' in content_lower:
+            content_type = 'documentation'
+        elif 'blog' in url or 'news' in url:
+            content_type = 'blog'
+        elif 'whitepaper' in content_lower or 'paper' in url:
+            content_type = 'whitepaper'
+        elif 'team' in content_lower or 'about' in url:
+            content_type = 'team'
+        
+        return {
+            'domain': domain,
+            'title': title,
+            'content_type': content_type,
+            'keywords': keywords[:10],  # Limit to top 10
+            'estimated_read_time': len(content.split()) // 200,  # rough reading time in minutes
+            'has_links': 'http' in content,
+            'has_code': any(code_indicator in content for code_indicator in ['function', 'contract', 'API', 'endpoint'])
+        }
+    
+    def _extract_topic_hints(self, text: str) -> List[str]:
+        """Extract topic hints from a chunk of text for better categorization."""
+        text_lower = text.lower()
+        topics = []
+        
+        # Topic categories with keywords
+        topic_keywords = {
+            'technical': ['api', 'code', 'function', 'contract', 'implementation', 'protocol'],
+            'business': ['partnership', 'funding', 'revenue', 'business', 'strategy', 'market'],
+            'team': ['team', 'founder', 'ceo', 'developer', 'advisor', 'employee'],
+            'tokenomics': ['token', 'supply', 'distribution', 'staking', 'rewards', 'economics'],
+            'roadmap': ['roadmap', 'milestone', 'phase', 'timeline', 'future', 'planned'],
+            'security': ['security', 'audit', 'safe', 'risk', 'vulnerability', 'protection']
+        }
+        
+        for topic, keywords in topic_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                topics.append(topic)
+        
+        return topics[:3]  # Limit to top 3 topics
+    
+    def _get_relevant_content_for_question(self, question: str) -> str:
+        """Intelligently select relevant content chunks based on user question."""
+        question_lower = question.lower()
+        relevant_sections = []
+        
+        # Start with DDQ content (always relevant)
+        ddq_content = self._build_source_knowledgebase()
+        if ddq_content:
+            relevant_sections.append("# Core Project Information\n\n" + ddq_content)
+        
+        # Get enhanced scraped content
+        scraped_content = st.session_state.get('notion_scraped_web_content', [])
+        crawled_content = st.session_state.get('notion_crawled_web_content', [])
+        
+        # Combine all web content for analysis
+        all_web_content = scraped_content + crawled_content
+        
+        # Find relevant chunks based on question keywords and topics
+        relevant_chunks = self._find_relevant_chunks(question_lower, all_web_content)
+        
+        if relevant_chunks:
+            web_section = "# Relevant Web Sources\n\n"
+            for chunk_info in relevant_chunks:
+                web_section += f"## {chunk_info['source_type']}: {chunk_info['url']}\n"
+                web_section += f"**Relevance:** {chunk_info['relevance_reason']}\n"
+                if chunk_info.get('metadata'):
+                    metadata = chunk_info['metadata']
+                    web_section += f"**Type:** {metadata.get('content_type', 'general')} | "
+                    web_section += f"**Keywords:** {', '.join(metadata.get('keywords', []))}\n"
+                web_section += f"\n{chunk_info['content']}\n\n---\n\n"
+            
+            relevant_sections.append(web_section)
+        
+        return "\n\n".join(relevant_sections) if relevant_sections else ""
+    
+    def _find_relevant_chunks(self, question_lower: str, web_content: List[Dict]) -> List[Dict]:
+        """Find relevant chunks from web content based on question analysis."""
+        relevant_chunks = []
+        
+        # Extract question keywords
+        question_keywords = self._extract_question_keywords(question_lower)
+        
+        for content_item in web_content:
+            url = content_item.get('url', 'Unknown')
+            metadata = content_item.get('metadata', {})
+            chunks = content_item.get('chunks', [])
+            
+            if not chunks:
+                # Fallback to original content if no chunks
+                original_content = content_item.get('original_content', content_item.get('content', ''))
+                if self._is_content_relevant(question_keywords, original_content.lower(), metadata):
+                    relevant_chunks.append({
+                        'url': url,
+                        'content': original_content[:2000],  # Limit size
+                        'source_type': 'Scraped Content',
+                        'relevance_reason': 'Contains relevant keywords',
+                        'metadata': metadata
+                    })
+                continue
+            
+            # Check each chunk for relevance
+            for chunk in chunks:
+                chunk_text = chunk.get('text', '')
+                chunk_topics = chunk.get('topic_hints', [])
+                
+                relevance_score, reason = self._calculate_chunk_relevance(
+                    question_keywords, chunk_text.lower(), chunk_topics, metadata
+                )
+                
+                if relevance_score > 0.3:  # Threshold for relevance
+                    relevant_chunks.append({
+                        'url': url,
+                        'content': chunk_text,
+                        'source_type': 'Scraped Content',
+                        'relevance_reason': reason,
+                        'relevance_score': relevance_score,
+                        'chunk_id': chunk.get('chunk_id', 0),
+                        'topics': chunk_topics,
+                        'metadata': metadata
+                    })
+        
+        # Sort by relevance score and limit results
+        relevant_chunks.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+        return relevant_chunks[:5]  # Return top 5 most relevant chunks
+    
+    def _extract_question_keywords(self, question_lower: str) -> List[str]:
+        """Extract meaningful keywords from user question."""
+        # Remove common question words
+        stop_words = {'what', 'how', 'when', 'where', 'why', 'who', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but'}
+        
+        # Split question into words and filter
+        words = [word.strip('?.,!') for word in question_lower.split()]
+        keywords = [word for word in words if len(word) > 2 and word not in stop_words]
+        
+        return keywords[:10]  # Limit to top 10 keywords
+    
+    def _is_content_relevant(self, question_keywords: List[str], content_lower: str, metadata: Dict) -> bool:
+        """Check if content is relevant based on keywords and metadata."""
+        # Check direct keyword matches
+        keyword_matches = sum(1 for keyword in question_keywords if keyword in content_lower)
+        
+        # Check metadata keywords
+        meta_keywords = metadata.get('keywords', [])
+        meta_matches = sum(1 for keyword in question_keywords 
+                          if any(meta_keyword in keyword or keyword in meta_keyword 
+                                for meta_keyword in meta_keywords))
+        
+        return (keyword_matches + meta_matches) >= 2  # At least 2 matches
+    
+    def _calculate_chunk_relevance(self, question_keywords: List[str], chunk_text: str, 
+                                 chunk_topics: List[str], metadata: Dict) -> tuple[float, str]:
+        """Calculate relevance score and provide reason for a content chunk."""
+        score = 0.0
+        reasons = []
+        
+        # Keyword matching (0-0.4 points)
+        keyword_matches = sum(1 for keyword in question_keywords if keyword in chunk_text)
+        if keyword_matches > 0:
+            score += min(keyword_matches * 0.1, 0.4)
+            reasons.append(f"{keyword_matches} keyword matches")
+        
+        # Topic relevance (0-0.3 points)
+        relevant_topics = []
+        for topic in chunk_topics:
+            if any(keyword in topic for keyword in question_keywords):
+                relevant_topics.append(topic)
+        
+        if relevant_topics:
+            score += len(relevant_topics) * 0.1
+            reasons.append(f"relevant topics: {', '.join(relevant_topics)}")
+        
+        # Metadata relevance (0-0.3 points)
+        meta_keywords = metadata.get('keywords', [])
+        meta_matches = sum(1 for keyword in question_keywords 
+                          if any(meta_keyword in keyword or keyword in meta_keyword 
+                                for meta_keyword in meta_keywords))
+        if meta_matches > 0:
+            score += min(meta_matches * 0.1, 0.3)
+            reasons.append(f"metadata matches")
+        
+        reason = ", ".join(reasons) if reasons else "general relevance"
+        return score, reason
     
     async def _scrape_urls(self, urls: List[str]) -> List[Dict[str, Any]]:
         """Scrape content from URLs using firecrawl client."""
@@ -1259,6 +1678,18 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             combined += "### 🕷️ Crawled Content\n\n"
             for page in additional_content['crawled_pages']:
                 combined += f"**{page.get('url', 'Unknown URL')}:**\n{page.get('content', 'No content')}\n\n"
+        
+        # Add DocSend deck content
+        if additional_content.get('docsend_decks'):
+            combined += "### 📊 DocSend Presentation Decks\n\n"
+            for deck in additional_content['docsend_decks']:
+                metadata = deck.get('metadata', {})
+                slides_processed = metadata.get('processed_slides', 0)
+                total_slides = metadata.get('total_slides', 0)
+                
+                combined += f"**DocSend Deck: {deck['url']}**\n"
+                combined += f"Slides processed: {slides_processed}/{total_slides}\n"
+                combined += f"Content extracted via OCR:\n\n{deck['content']}\n\n"
         
         return combined
     
@@ -1355,7 +1786,7 @@ Include specific data points and quotes from the source material where relevant.
         except Exception as e:
             raise RuntimeError(f"Enhanced research failed: {str(e)}")
     
-    def _get_sources_summary(self, uploaded_docs, web_urls, crawl_option):
+    def _get_sources_summary(self, uploaded_docs, web_urls, crawl_option, docsend_url=''):
         """Get a summary of sources used."""
         sources = []
         if uploaded_docs:
@@ -1372,6 +1803,9 @@ Include specific data points and quotes from the source material where relevant.
         
         if crawl_option == "Option B: Crawl from URL":
             sources.append("crawled content")
+        
+        if docsend_url:
+            sources.append("DocSend deck")
         
         return ", ".join(sources) if sources else "DDQ only"
     
@@ -2134,87 +2568,119 @@ Include specific data points and quotes from the source material where relevant.
             with st.expander("# 💬 **Chat with AI about Enhanced Report**", expanded=st.session_state.get('notion_chat_ui_expanded', False)):
                 report_id = st.session_state.notion_current_report_id_for_chat
                 
-                # Check if RAG context is available
-                rag_context = st.session_state.get('notion_rag_contexts', {}).get(report_id)
-                if rag_context:
-                    st.success("🧠 **RAG Context Available** - Ask questions about the report content!")
-                    
-                    # Chat input
-                    user_question = st.text_input(
-                        "Ask a question about the report:",
-                        key="notion_chat_input",
-                        placeholder="What are the key findings about this project?"
-                    )
-                    
-                    col1, col2 = st.columns([1, 4])
-                    with col1:
-                        if st.button("💬 Ask", key="notion_chat_ask_btn"):
-                            if user_question:
-                                await self._process_chat_question(user_question, report_id)
-                            else:
-                                st.warning("Please enter a question.")
-                    
-                    with col2:
-                        if st.button("🧹 Clear Chat", key="notion_clear_chat_btn"):
-                            st.session_state.notion_chat_sessions_store = {}
-                            st.session_state.notion_current_chat_session_id = None
-                            self.show_success("Chat cleared!")
-                    
-                    # Display chat history
-                    self._display_chat_history(report_id)
-                    
-                else:
-                    st.info("💡 **RAG Context Not Available** - Generate a report first to enable chat functionality.")
-                    
-                    if st.button("🔄 Build RAG Context", key="notion_build_rag_btn"):
-                        await self._build_rag_context(report_id)
-
-    async def _process_chat_question(self, question: str, report_id: str) -> None:
-        """Process a chat question using RAG context."""
-        try:
-            rag_context = st.session_state.get('notion_rag_contexts', {}).get(report_id)
-            if not rag_context:
-                self.show_error("RAG context not available")
-                return
-            
-            with st.spinner("🤔 AI is thinking..."):
-                # Search for relevant context
-                embedding_model = get_embedding_model()
-                relevant_chunks = search_faiss_index(
-                    question,
-                    rag_context["index"],
-                    rag_context["chunks"],
-                    embedding_model,
-                    top_k=TOP_K_RESULTS
+                # Chat uses enhanced content analysis with chunked storage
+                st.success("💬 **Enhanced Chat Ready** - Ask questions about DDQ content, documents, and scraped web sources!")
+                
+                # Chat input (always available)
+                user_question = st.text_input(
+                    "Ask a question about the report:",
+                    key="notion_chat_input",
+                    placeholder="What are the key findings about this project?"
                 )
                 
-                # Build context for AI
-                context = "\n\n".join([chunk["text"] for chunk in relevant_chunks])
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    if st.button("💬 Ask", key="notion_chat_ask_btn"):
+                        if user_question:
+                            await self._process_chat_question(user_question, report_id)
+                        else:
+                            st.warning("Please enter a question.")
                 
-                # Generate response
-                prompt = f"""Based on the following context from the research report, please answer the user's question.
+                with col2:
+                    if st.button("🧹 Clear Chat", key="notion_clear_chat_btn"):
+                        st.session_state.notion_chat_sessions_store = {}
+                        st.session_state.notion_current_chat_session_id = None
+                        self.show_success("Chat cleared!")
                 
+                # Display chat history
+                self._display_chat_history(report_id)
+                
+                # RAG building removed - disabled on macOS and confusing to users
+                # Chat now uses improved chunked storage for scraped content
+
+    async def _process_chat_question(self, question: str, report_id: str) -> None:
+        """Process a chat question using RAG context or direct AI analysis."""
+        try:
+            with st.spinner("🤔 AI is thinking..."):
+                rag_context = st.session_state.get('notion_rag_contexts', {}).get(report_id)
+                client = st.session_state.get('notion_openrouter_client')
+                
+                if not client:
+                    self.show_error("OpenRouter client not available")
+                    return
+                
+                if rag_context:
+                    # RAG-based response (preferred when available)
+                    try:
+                        embedding_model = get_embedding_model()
+                        relevant_chunks = search_faiss_index(
+                            question,
+                            rag_context["index"],
+                            rag_context["chunks"],
+                            embedding_model,
+                            top_k=TOP_K_RESULTS
+                        )
+                        
+                        # Build context for AI
+                        context = "\n\n".join([chunk["text"] for chunk in relevant_chunks])
+                        
+                        prompt = f"""Based on the following context from the research report, please answer the user's question.
+                        
 Context:
 {context}
 
 Question: {question}
 
 Please provide a helpful and accurate answer based on the context provided."""
+                        
+                        system_prompt = "You are a helpful research assistant. Answer questions based on the provided context."
+                        response_method = "RAG-enhanced"
+                        
+                    except Exception as rag_error:
+                        # RAG failed, fall back to direct analysis
+                        st.warning(f"RAG processing failed: {str(rag_error)}. Using direct analysis.")
+                        rag_context = None
                 
-                client = st.session_state.get('notion_openrouter_client')
-                if client:
-                    model_to_use = st.session_state.get("notion_selected_model", "qwen/qwen3-30b-a3b:free")
-                    response = await client.generate_response(
-                        prompt=prompt,
-                        system_prompt="You are a helpful research assistant. Answer questions based on the provided context.",
-                        model_override=model_to_use
-                    )
+                if not rag_context:
+                    # Enhanced content analysis using intelligent chunk selection
+                    relevant_content = self._get_relevant_content_for_question(question)
                     
+                    if relevant_content:
+                        prompt = f"""Based on the following relevant source materials (intelligently selected from DDQ content, documents, and enhanced scraped web sources), please answer the user's question.
+
+Relevant Source Materials:
+{relevant_content}
+
+Question: {question}
+
+Please provide a helpful and accurate answer based on the relevant source materials provided. Reference specific sections or sources when possible."""
+                        
+                        system_prompt = "You are a helpful research assistant. Analyze the relevant source materials and provide specific, accurate answers with source references."
+                        response_method = "Enhanced content analysis"
+                    else:
+                        # Ultimate fallback - general response
+                        prompt = f"""The user is asking about a research project: "{question}"
+
+Please provide a helpful response acknowledging that you don't have access to the specific project data, but offer general guidance about the topic if possible."""
+                        
+                        system_prompt = "You are a helpful research assistant. Provide general guidance when specific project data is not available."
+                        response_method = "General guidance"
+                
+                # Always use Qwen 3 30B for chat regardless of user's model selection
+                model_to_use = "qwen/qwen3-30b-a3b:free"
+                response = await client.generate_response(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model_override=model_to_use
+                )
+                
+                if response:
                     # Store in chat history
                     chat_history = st.session_state.get('notion_chat_sessions_store', {}).get(report_id, [])
                     chat_history.append({
                         'question': question,
                         'answer': response,
+                        'method': response_method,
                         'timestamp': pd.Timestamp.now().strftime('%H:%M:%S')
                     })
                     
@@ -2222,10 +2688,10 @@ Please provide a helpful and accurate answer based on the context provided."""
                         st.session_state.notion_chat_sessions_store = {}
                     st.session_state.notion_chat_sessions_store[report_id] = chat_history
                     
-                    self.show_success("✅ Answer generated!")
+                    self.show_success(f"✅ Answer generated using {response_method}!")
                     st.rerun()
                 else:
-                    self.show_error("OpenRouter client not available")
+                    self.show_error("AI returned empty response")
                     
         except Exception as e:
             self.show_error(f"Chat processing failed: {str(e)}")
@@ -2238,9 +2704,16 @@ Please provide a helpful and accurate answer based on the context provided."""
             st.markdown("### 📝 **Chat History**")
             for i, chat in enumerate(reversed(chat_history[-5:])):  # Show last 5 chats
                 with st.container():
+                    # Show method used for the response
+                    method = chat.get('method', 'Unknown')
+                    method_icon = ("🧠" if method == "RAG-enhanced" else 
+                                 "🎯" if method == "Enhanced content analysis" else 
+                                 "📚" if method == "Source analysis" else 
+                                 "🤖" if method == "Direct analysis" else "💭")
+                    
                     st.markdown(f"**🙋 Question ({chat['timestamp']}):**")
                     st.markdown(f"> {chat['question']}")
-                    st.markdown(f"**🤖 Answer:**")
+                    st.markdown(f"**{method_icon} Answer ({method}):**")
                     st.markdown(chat['answer'])
                     st.divider()
     
@@ -2282,5 +2755,156 @@ Please provide a helpful and accurate answer based on the context provided."""
                     self.show_error("No text chunks available for RAG")
                     
         except Exception as e:
-            self.show_error(f"Error building RAG context: {str(e)}")
+            # RAG disabled - silently set to None without confusing user messages
             st.session_state.notion_rag_contexts[report_id] = None 
+    
+    def _build_source_knowledgebase(self) -> str:
+        """Build comprehensive knowledgebase from DDQ content and additional sources."""
+        source_sections = []
+        
+        # Get selected pages DDQ content (Step 2)
+        selected_pages = st.session_state.get('notion_selected_pages', [])
+        available_pages = st.session_state.get('notion_available_pages', [])
+        page_lookup = {p['id']: p for p in available_pages}
+        
+        for page_id in selected_pages:
+            page_info = page_lookup.get(page_id, {'title': f'Page {page_id[:8]}', 'id': page_id})
+            
+            try:
+                # Get DDQ content components
+                from src.notion_research import _fetch_ddq_markdown, _fetch_calls_text, _fetch_freeform_text
+                
+                ddq_content = _fetch_ddq_markdown(page_id) or "DDQ content not available."
+                calls_content = _fetch_calls_text(page_id) or "Call notes not available."
+                freeform_content = _fetch_freeform_text(page_id) or "Freeform content not available."
+                
+                # Add to source sections
+                page_section = f"""## 📋 Notion Project: {page_info['title']}
+
+### Due Diligence Questionnaire
+{ddq_content}
+
+### Call Notes
+{calls_content}
+
+### Additional Project Information
+{freeform_content}
+
+---"""
+                source_sections.append(page_section)
+                
+            except Exception as e:
+                # If DDQ fetch fails, note it but continue
+                error_section = f"""## 📋 Notion Project: {page_info['title']}
+
+⚠️ Error fetching DDQ content: {str(e)}
+
+---"""
+                source_sections.append(error_section)
+        
+        # Get additional sources from Step 3
+        additional_sources = self._build_additional_sources_content()
+        if additional_sources:
+            source_sections.append(additional_sources)
+        
+        return "\n\n".join(source_sections) if source_sections else ""
+    
+    def _build_additional_sources_content(self) -> str:
+        """Build content from additional sources (Step 3) using enhanced chunked storage."""
+        additional_sections = []
+        
+        # Uploaded documents
+        processed_docs = st.session_state.get('notion_processed_documents_content', [])
+        if processed_docs:
+            doc_section = "## 📄 Additional Documents\n\n"
+            for doc in processed_docs:
+                doc_section += f"### Document: {doc['name']}\n{doc['text']}\n\n"
+            additional_sections.append(doc_section)
+        
+        # Web content - use enhanced chunked storage
+        scraped_web_content = st.session_state.get('notion_scraped_web_content', [])
+        if scraped_web_content:
+            web_section = "## 🌐 Enhanced Scraped Web Content\n\n"
+            for page in scraped_web_content:
+                metadata = page.get('metadata', {})
+                web_section += f"### URL: {page['url']}\n"
+                web_section += f"**Domain:** {metadata.get('domain', 'Unknown')} | "
+                web_section += f"**Type:** {metadata.get('content_type', 'general')} | "
+                web_section += f"**Keywords:** {', '.join(metadata.get('keywords', []))}\n\n"
+                
+                # Use chunks for better organization
+                chunks = page.get('chunks', [])
+                if chunks:
+                    for chunk in chunks:
+                        topics = chunk.get('topic_hints', [])
+                        topic_info = f" ({', '.join(topics)})" if topics else ""
+                        web_section += f"**Content Section {chunk['chunk_id'] + 1}{topic_info}:**\n{chunk['text']}\n\n"
+                else:
+                    # Fallback to original content if no chunks
+                    web_section += f"{page.get('original_content', page.get('content', ''))}\n\n"
+            additional_sections.append(web_section)
+        
+        # Crawled content - use enhanced chunked storage
+        crawled_web_content = st.session_state.get('notion_crawled_web_content', [])
+        if crawled_web_content:
+            crawl_section = "## 🕷️ Enhanced Crawled Web Content\n\n"
+            for page in crawled_web_content:
+                metadata = page.get('metadata', {})
+                crawl_section += f"### URL: {page['url']}\n"
+                crawl_section += f"**Domain:** {metadata.get('domain', 'Unknown')} | "
+                crawl_section += f"**Type:** {metadata.get('content_type', 'general')} | "
+                crawl_section += f"**Keywords:** {', '.join(metadata.get('keywords', []))}\n\n"
+                
+                # Use chunks for better organization
+                chunks = page.get('chunks', [])
+                if chunks:
+                    for chunk in chunks:
+                        topics = chunk.get('topic_hints', [])
+                        topic_info = f" ({', '.join(topics)})" if topics else ""
+                        crawl_section += f"**Content Section {chunk['chunk_id'] + 1}{topic_info}:**\n{chunk['text']}\n\n"
+                else:
+                    # Fallback to original content if no chunks
+                    crawl_section += f"{page.get('original_content', page.get('content', ''))}\n\n"
+            additional_sections.append(crawl_section)
+        
+        # DocSend deck content
+        docsend_content = st.session_state.get('notion_docsend_content', '')
+        docsend_metadata = st.session_state.get('notion_docsend_metadata', {})
+        if docsend_content:
+            docsend_section = "## 📊 DocSend Presentation Deck (OCR Extracted)\n\n"
+            docsend_section += f"**URL:** {docsend_metadata.get('url', 'Unknown')}\n"
+            docsend_section += f"**Slides processed:** {docsend_metadata.get('processed_slides', 0)}/{docsend_metadata.get('total_slides', 0)}\n"
+            docsend_section += f"**Total characters:** {docsend_metadata.get('total_characters', 0):,}\n"
+            docsend_section += f"**Processing time:** {docsend_metadata.get('processing_time', 0):.1f} seconds\n\n"
+            docsend_section += f"**Full OCR Content:**\n{docsend_content}\n\n"
+            additional_sections.append(docsend_section)
+        
+        # If no scraped content available, show configuration info for transparency
+        web_urls = st.session_state.get('notion_web_urls', [])
+        selected_sitemap_urls = st.session_state.get('notion_selected_sitemap_urls', set())
+        crawl_option = st.session_state.get('notion_crawl_option', 'None')
+        docsend_url = st.session_state.get('notion_docsend_url', '')
+        
+        if not scraped_web_content and not crawled_web_content and not docsend_content:
+            config_info = []
+            if web_urls:
+                config_info.append(f"🌐 {len(web_urls)} Web URLs configured")
+            if selected_sitemap_urls:
+                config_info.append(f"🗺️ {len(selected_sitemap_urls)} Sitemap URLs selected")
+            if crawl_option != 'None':
+                config_info.append(f"🕷️ Website crawling: {crawl_option}")
+            if docsend_url:
+                config_info.append(f"📊 DocSend deck: {docsend_url}")
+            
+            if config_info:
+                config_section = "## 🔧 Additional Sources Configuration\n\n"
+                config_section += "The following additional sources were configured for research:\n\n"
+                for info in config_info:
+                    config_section += f"- {info}\n"
+                config_section += "\n*Note: Web content and DocSend content will be available after running Enhanced Research.*\n\n"
+                additional_sections.append(config_section)
+        
+        if additional_sections:
+            return f"# 📚 Additional Research Sources\n\n" + "\n".join(additional_sections)
+        else:
+            return ""
