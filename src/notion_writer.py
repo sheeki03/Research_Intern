@@ -442,11 +442,14 @@ def publish_report(page_id: str, report_path: Path, username: str = None) -> str
 
     _logger.info("action=writer.start page_id=%s username=%s", page_id, username)
 
-    # Determine the page title
+    # Determine the page title with current date in DD Month YYYY format
+    from datetime import datetime
+    current_date = datetime.now().strftime("%d %B %Y")
+    
     if username:
-        page_title = f"AI Deep Research Report by {username}"
+        page_title = f"AI Deep Research Report by {username} ({current_date})"
     else:
-        page_title = "AI Deep Research Report"
+        page_title = f"AI Deep Research Report ({current_date})"
 
     client = _notion()
     # ------------------------------------------------------------------

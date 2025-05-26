@@ -205,7 +205,8 @@ class NotionAutomationPage(BasePage):
             'notion_automation_logs': [],
             'notion_manual_research_running': False,
             'notion_available_pages': [],
-            'notion_selected_pages': [],
+            'notion_selected_pages': [],  # Keep for backward compatibility
+            'notion_selected_page_id': None,  # New single page selection
             'notion_current_operation': None,
             'notion_operation_progress': {},
             'notion_last_poll_results': {},
@@ -299,58 +300,59 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             st.info("💾 Loading cached pages automatically...")
             await self._load_cached_pages()
         
-        # Step 2: Page Selection - Clean and Simple
+        # Step 2: Page Selection - Single Selection Only
         if st.session_state.get('notion_available_pages'):
             pages = st.session_state.notion_available_pages
-            selected_pages = st.session_state.get('notion_selected_pages', [])
+            selected_page_id = st.session_state.get('notion_selected_page_id', None)
             
-            st.markdown("### 📋 **Step 2: Select Pages for Processing**")
+            st.markdown("### 📋 **Step 2: Select Page for Processing** (Single Selection)")
             
-            # Quick selection controls
-            col1, col2, col3 = st.columns([1, 1, 2])
+            # Clear selection control
+            col1, col2 = st.columns([1, 3])
             with col1:
-                if st.button("✅ All", key="select_all_pages"):
-                    st.session_state.notion_selected_pages = [p['id'] for p in pages]
-                    st.rerun()
-            with col2:
-                if st.button("❌ None", key="clear_selection"):
+                if st.button("❌ Clear", key="clear_selection"):
+                    st.session_state.notion_selected_page_id = None
+                    # Also clear the old multi-select for backward compatibility
                     st.session_state.notion_selected_pages = []
                     st.rerun()
-            with col3:
-                selected_count = len(selected_pages)
-                total_count = len(pages)
-                st.metric("Selected", f"{selected_count}/{total_count}")
+            with col2:
+                if selected_page_id:
+                    selected_page = next((p for p in pages if p['id'] == selected_page_id), None)
+                    page_title = selected_page['title'] if selected_page else 'Unknown'
+                    st.metric("Selected Page", page_title)
+                else:
+                    st.metric("Selected Page", "None")
             
-            # Compact page selection with better layout
-            if len(pages) <= 5:
-                # Show all pages if few
-                for page in pages:
-                    page_id = page['id']
-                    page_title = page.get('title', 'Untitled')
-                    is_selected = page_id in selected_pages
-                    
-                    if st.checkbox(f"📋 {page_title}", value=is_selected, key=f"page_cb_{page_id}"):
-                        if page_id not in selected_pages:
-                            st.session_state.notion_selected_pages.append(page_id)
-                    else:
-                        if page_id in selected_pages:
-                            st.session_state.notion_selected_pages.remove(page_id)
-            else:
-                # Use multiselect for many pages
-                selected_titles = [p['title'] for p in pages if p['id'] in selected_pages]
-                all_titles = [p['title'] for p in pages]
-                
-                selected_from_widget = st.multiselect(
-                    "Choose pages:",
-                    options=all_titles,
-                    default=selected_titles,
-                    key="page_multiselect"
-                )
-                
-                # Update session state based on multiselect
-                st.session_state.notion_selected_pages = [
-                    p['id'] for p in pages if p['title'] in selected_from_widget
-                ]
+            # Radio button selection for single page
+            page_options = ["None"] + [f"📋 {page.get('title', 'Untitled')}" for page in pages]
+            page_ids = [None] + [page['id'] for page in pages]
+            
+            # Find current selection index
+            current_index = 0
+            if selected_page_id:
+                try:
+                    current_index = page_ids.index(selected_page_id)
+                except ValueError:
+                    current_index = 0
+            
+            selected_option_index = st.radio(
+                "Choose one page:",
+                range(len(page_options)),
+                format_func=lambda x: page_options[x],
+                index=current_index,
+                key="page_radio_selection"
+            )
+            
+            # Update session state based on radio selection
+            new_selected_page_id = page_ids[selected_option_index]
+            if new_selected_page_id != selected_page_id:
+                st.session_state.notion_selected_page_id = new_selected_page_id
+                # Update the old multi-select format for backward compatibility
+                if new_selected_page_id:
+                    st.session_state.notion_selected_pages = [new_selected_page_id]
+                else:
+                    st.session_state.notion_selected_pages = []
+                st.rerun()
         
         else:
             st.markdown("#### 📋 **Step 2: Select Pages**")
@@ -491,7 +493,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         st.write("**Workflow:** Enhanced Research → Project Scoring → Reports & Analysis")
         
         if not selected_pages:
-            st.info("💡 Select pages above to enable operations")
+            st.info("💡 Select a page above to enable operations")
             # Don't use st.stop() here as it prevents admin panel from rendering
             return
         
@@ -503,7 +505,7 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 "**📤 Auto-publish Enhanced Research to Notion**",
                 value=st.session_state.get('notion_auto_publish_to_notion', False),
                 key="notion_auto_publish_checkbox",
-                help="Create 'AI Deep Research Report by [username]' child pages"
+                help="Create 'AI Deep Research Report by [username] (DD Month YYYY)' child pages"
             )
             st.session_state.notion_auto_publish_to_notion = auto_publish_research
             
@@ -511,12 +513,13 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 "**📊 Auto-publish Project Scoring to Notion**", 
                 value=st.session_state.get('notion_auto_publish_scoring', False),
                 key="notion_auto_publish_scoring_main_checkbox",
-                help="Create 'Project Scoring by [username]' child pages with results"
+                help="Create 'Project Scoring by [username] (DD Month YYYY)' child pages with results"
             )
             st.session_state.notion_auto_publish_scoring = auto_publish_scoring
         
         with col2:
-            st.metric("Ready", f"{len(selected_pages)} pages")
+            page_count = len(selected_pages)
+            st.metric("Ready", f"{page_count} page{'s' if page_count != 1 else ''}")
         
         # Main operation buttons - prominent and clear
         col1, col2 = st.columns(2)
@@ -2401,7 +2404,10 @@ Include specific data points and quotes from the source material where relevant.
         timeout_cfg = httpx.Timeout(180.0, connect=10.0)
         client = NotionClient(auth=token, client=httpx.Client(timeout=timeout_cfg))
         
-        page_title = f"Project Scoring by {username}"
+        # Add current date to the title in DD Month YYYY format
+        from datetime import datetime
+        current_date = datetime.now().strftime("%d %B %Y")
+        page_title = f"Project Scoring by {username} ({current_date})"
         
         # Convert markdown to simple blocks (paragraph blocks)
         lines = markdown_content.split('\n')

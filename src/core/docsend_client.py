@@ -151,8 +151,8 @@ class DocSendClient:
                 # Fallback to ChromeDriverManager
                 print(f"System chromedriver failed ({str(e)}), using ChromeDriverManager...")
                 try:
-                    service = ChromeService(ChromeDriverManager().install())
-                    browser = webdriver.Chrome(service=service, options=chrome_options)
+            service = ChromeService(ChromeDriverManager().install())
+            browser = webdriver.Chrome(service=service, options=chrome_options)
                     print("✅ Using ChromeDriverManager chromedriver")
                 except Exception as e2:
                     raise WebDriverException(f"Both system and managed chromedriver failed. System: {str(e)}, Managed: {str(e2)}")
@@ -174,12 +174,12 @@ class DocSendClient:
                 
                 // Override the permissions API if it exists
                 if (window.navigator.permissions && window.navigator.permissions.query) {
-                    const originalQuery = window.navigator.permissions.query;
-                    window.navigator.permissions.query = (parameters) => (
-                        parameters.name === 'notifications' ?
-                            Promise.resolve({ state: Notification.permission }) :
-                            originalQuery(parameters)
-                    );
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
                 }
                 
                 // Add realistic screen properties
@@ -238,7 +238,7 @@ class DocSendClient:
             import shutil
             chrome_binaries = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']
             if any(shutil.which(binary) for binary in chrome_binaries):
-                available.append('chrome')
+            available.append('chrome')
         except:
             pass
         
@@ -246,7 +246,7 @@ class DocSendClient:
         try:
             import shutil
             if shutil.which('firefox') or shutil.which('firefox-esr'):
-                available.append('firefox')
+            available.append('firefox')
         except:
             pass
         
@@ -254,7 +254,7 @@ class DocSendClient:
         try:
             import shutil
             if shutil.which('microsoft-edge') or shutil.which('msedge'):
-                available.append('edge')
+            available.append('edge')
         except:
             pass
         
@@ -275,7 +275,7 @@ class DocSendClient:
             available_browsers = self._detect_available_browsers()
             if 'chrome' in available_browsers:
                 browsers_to_try = ['chrome']
-            else:
+        else:
                 browsers_to_try = available_browsers
         
         last_error = None

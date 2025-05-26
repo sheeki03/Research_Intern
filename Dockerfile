@@ -39,18 +39,13 @@ RUN apt-get update && apt-get install -y \
     firefox-esr \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome for Selenium with proper dependencies (architecture-aware)
-RUN apt-get update && \
-    # Install Chromium as a fallback for ARM64 or if Chrome fails
-    apt-get install -y chromium chromium-driver \
-    # Install additional Chrome/Chromium dependencies for containers
-    && apt-get install -y \
-        libxss1 \
-        libappindicator1 \
-        xvfb \
+# Install Chromium and ChromeDriver (better ARM64 support)
+RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Chrome/Chromium binary location for Selenium
+# Set environment variables for browser binaries
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
