@@ -29,23 +29,11 @@ class AppController:
 
     def _get_git_commit(self) -> str:
         """Get the current git commit hash."""
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
-                capture_output=True,
-                text=True,
-                cwd=os.path.dirname(os.path.abspath(__file__)),
-                timeout=5,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except (
-            subprocess.TimeoutExpired,
-            subprocess.CalledProcessError,
-            FileNotFoundError,
-        ):
-            pass
-        return "unknown"
+        commit_hash = os.getenv("SOURCE_COMMIT")
+        if commit_hash:
+            return commit_hash.strip()[:7]
+
+        return ""
 
     async def run(self) -> None:
         """Main application entry point."""
