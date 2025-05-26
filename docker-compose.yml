@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   app:
@@ -47,4 +47,4 @@ services:
       retries: 3
 
 volumes:
-  redis_data: 
+  redis_data:
