@@ -387,7 +387,7 @@ def parse_sitemap_urls_from_robots(robots_txt_content: str) -> list[str]:
 async def fetch_sitemap_content(sitemap_url: str) -> Optional[str]:
     """
     Fetches the content of a sitemap file from a given URL.
-    Handles potential GZip compression automatically via httpx.
+    Handles potential GZip compression automatically via httpx and manual fallback.
 
     Args:
         sitemap_url: The URL of the sitemap file (e.g., http://example.com/sitemap.xml 
@@ -407,13 +407,76 @@ async def fetch_sitemap_content(sitemap_url: str) -> Optional[str]:
             response = await make_protected_request(sitemap_url, client, delay_range=(1.0, 3.0), enhanced=True)
             response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx
             
-            # httpx handles content decoding (like gzip) automatically based on Content-Encoding header.
-            # response.text will give the decoded text.
+            # First try httpx automatic decoding
             sitemap_content = response.text
+            
+            # Check if content looks like binary/compressed data (only if it doesn't start with XML)
+            if sitemap_content and len(sitemap_content) > 0:
+                # Only try manual decompression if content doesn't look like XML and has binary characters
+                if (not sitemap_content.strip().startswith(("<?xml", "<sitemapindex", "<urlset")) and 
+                    any(ord(c) < 32 and c not in '\t\n\r' for c in sitemap_content[:100])):
+                    logger.warning(f"Content from {sitemap_url} appears to be binary/compressed. Attempting manual decompression...")
+                    
+                    # Try manual gzip decompression
+                    try:
+                        import gzip
+                        import io
+                        
+                        # Get raw bytes and try to decompress
+                        raw_content = response.content
+                        
+                        # Try gzip decompression
+                        try:
+                            with gzip.GzipFile(fileobj=io.BytesIO(raw_content)) as gz_file:
+                                decompressed_content = gz_file.read().decode('utf-8')
+                                logger.info(f"Successfully manually decompressed gzip content from {sitemap_url}")
+                                sitemap_content = decompressed_content
+                        except (gzip.BadGzipFile, OSError):
+                            # Not gzip compressed, try other methods
+                            logger.warning(f"Content is not gzip compressed. Trying other decompression methods...")
+                            
+                            # Try Brotli decompression first (common for modern sites)
+                            brotli_success = False
+                            try:
+                                import brotli
+                                decompressed_content = brotli.decompress(raw_content).decode('utf-8')
+                                logger.info(f"Successfully decompressed Brotli content from {sitemap_url}")
+                                sitemap_content = decompressed_content
+                                brotli_success = True
+                            except ImportError:
+                                logger.warning(f"Brotli library not available for decompression")
+                            except Exception as brotli_error:
+                                logger.warning(f"Brotli decompression failed: {str(brotli_error)}")
+                            
+                            if not brotli_success:
+                                # Try deflate decompression
+                                try:
+                                    import zlib
+                                    decompressed_content = zlib.decompress(raw_content).decode('utf-8')
+                                    logger.info(f"Successfully decompressed deflate content from {sitemap_url}")
+                                    sitemap_content = decompressed_content
+                                except (zlib.error, UnicodeDecodeError):
+                                    # Try deflate with -15 window bits (raw deflate)
+                                    try:
+                                        decompressed_content = zlib.decompress(raw_content, -15).decode('utf-8')
+                                        logger.info(f"Successfully decompressed raw deflate content from {sitemap_url}")
+                                        sitemap_content = decompressed_content
+                                    except (zlib.error, UnicodeDecodeError):
+                                        logger.error(f"Could not decompress content from {sitemap_url}. Content appears to be compressed but unknown format.")
+                                        return None
+                    except Exception as decomp_error:
+                        logger.error(f"Error during manual decompression of {sitemap_url}: {str(decomp_error)}")
+                        return None
+            
             logger.info(f"Successfully fetched and decoded sitemap from {sitemap_url}. Length: {len(sitemap_content)} chars.")
+            
             # Basic check for XML structure, as sitemaps should be XML
             if not sitemap_content.strip().startswith(("<?xml", "<sitemapindex", "<urlset")):
                 logger.warning(f"Content from {sitemap_url} does not look like XML. Preview: {sitemap_content[:200]}")
+                # For debugging, let's also check if it might be HTML
+                if sitemap_content.strip().startswith(("<!DOCTYPE", "<html")):
+                    logger.warning(f"Content appears to be HTML instead of XML sitemap")
+                    return None
                 # Depending on strictness, one might return None here, but for now, we return what we got.
             return sitemap_content
     except httpx.HTTPStatusError as e:
