@@ -613,7 +613,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     st.session_state.notion_uploaded_docs = uploaded_files
                     st.success(f"✅ {len(uploaded_files)} document(s) uploaded")
                     
-                    with st.expander("## 📋 Uploaded Files", expanded=False):
+                    # Show uploaded files in a container instead of nested expander
+                    with st.container():
+                        st.markdown("**📋 Uploaded Files:**")
                         for file in uploaded_files:
                             st.write(f"📄 **{file.name}** ({file.size:,} bytes)")
                 else:
@@ -637,7 +639,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     
                     if urls:
                         st.success(f"✅ {len(urls)} URL(s) added")
-                        with st.expander("## 🔗 URLs to Process", expanded=False):
+                        # Show URLs in a container instead of nested expander
+                        with st.container():
+                            st.markdown("**🔗 URLs to Process:**")
                             for i, url in enumerate(urls, 1):
                                 st.write(f"{i}. {url}")
                 else:
@@ -749,7 +753,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     
                     st.success(f"✅ DocSend deck processed: {slides_processed}/{total_slides} slides ({processing_time:.1f}s)")
                     
-                    with st.expander("## 📋 DocSend Processing Details", expanded=False):
+                    # Show DocSend details in a container instead of nested expander
+                    with st.container():
+                        st.markdown("**📋 DocSend Processing Details:**")
                         st.write(f"**URL:** {docsend_metadata.get('url', 'Unknown')}")
                         st.write(f"**Total slides:** {total_slides}")
                         st.write(f"**Slides with text:** {docsend_metadata.get('slides_with_text', 0)}")
@@ -1146,8 +1152,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     sources_count = len(uploaded_docs) + len(web_urls) + (1 if crawl_option != 'None' else 0) + (1 if docsend_url else 0)
                     st.metric("📚 Extra Sources", sources_count)
                 
-                # Show individual results
-                with st.expander("## 📋 **Individual Results**", expanded=True):
+                # Show individual results in a container instead of nested expander
+                st.markdown("### 📋 **Individual Results**")
+                with st.container():
                     for result in results:
                         if result['status'] == 'Success':
                             st.success(f"✅ **{result['page_title']}**")
@@ -1185,8 +1192,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             self._end_operation()
             self.show_error(f"Enhanced research pipeline failed: {str(e)}")
             
-            with st.expander("🐛 Error Details"):
-                st.code(str(e))
+            # Show error details in a container instead of nested expander
+            st.markdown("**🐛 Error Details:**")
+            st.code(str(e))
     
     async def _process_additional_sources(self, uploaded_docs, web_urls, crawl_option, 
                                          docsend_url='', docsend_email='', docsend_password=''):
