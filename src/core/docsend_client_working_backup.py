@@ -254,7 +254,7 @@ class DocSendClient:
         try:
             import shutil
             if shutil.which('microsoft-edge') or shutil.which('msedge'):
-                available.append('edge')
+            available.append('edge')
         except:
             pass
         
@@ -358,7 +358,7 @@ class DocSendClient:
                 lambda driver: driver.execute_script("return document.readyState") == "complete"
             )
             
-            # Handle email prompt (and check for password field in same form)
+            # Handle email prompt first (most common)
             try:
                 # Find the visible email input (not hidden feedback forms)
                 email_input = None
@@ -389,81 +389,6 @@ class DocSendClient:
                         EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='email'], input[name='email'], input[placeholder*='email' i]"))
                     )
                 
-                # Check if password field is present in the same form
-                password_input = None
-                
-                # Wait a moment for the form to fully load
-                time.sleep(random.uniform(1.0, 2.0))
-                
-                # Try multiple selectors for password fields (including DocSend passcode fields)
-                password_selectors = [
-                    "input[type='password']",
-                    "input[name*='password']",
-                    "input[id*='password']",
-                    "input[placeholder*='password' i]",
-                    "input[name*='passcode']",  # DocSend uses passcode fields
-                    "input[id*='passcode']",
-                    "input[name='link_auth_form[passcode]']"  # Specific DocSend passcode field
-                ]
-                
-                print("🔍 Checking for password field in form...")
-                
-                # First, let's debug all form elements on the page
-                try:
-                    all_inputs = browser.find_elements(By.TAG_NAME, "input")
-                    print(f"📋 DEBUG: Found {len(all_inputs)} total input elements on page:")
-                    for i, input_elem in enumerate(all_inputs):
-                        try:
-                            input_type = input_elem.get_attribute('type') or 'no-type'
-                            input_name = input_elem.get_attribute('name') or 'no-name'
-                            input_id = input_elem.get_attribute('id') or 'no-id'
-                            input_placeholder = input_elem.get_attribute('placeholder') or 'no-placeholder'
-                            is_displayed = input_elem.is_displayed()
-                            is_enabled = input_elem.is_enabled()
-                            
-                            print(f"    Input {i+1}: type='{input_type}' name='{input_name}' id='{input_id}' placeholder='{input_placeholder}' displayed={is_displayed} enabled={is_enabled}")
-                        except Exception as e:
-                            print(f"    Error checking input {i+1}: {e}")
-                except Exception as e:
-                    print(f"  Error getting all inputs: {e}")
-                
-                # Now check specifically for password fields
-                for selector in password_selectors:
-                    try:
-                        password_fields = browser.find_elements(By.CSS_SELECTOR, selector)
-                        print(f"  Found {len(password_fields)} password field(s) with selector: {selector}")
-                        
-                        for i, pwd_field in enumerate(password_fields):
-                            try:
-                                is_displayed = pwd_field.is_displayed()
-                                is_enabled = pwd_field.is_enabled()
-                                field_name = pwd_field.get_attribute('name') or 'no-name'
-                                field_id = pwd_field.get_attribute('id') or 'no-id'
-                                field_placeholder = pwd_field.get_attribute('placeholder') or 'no-placeholder'
-                                
-                                print(f"    Password field {i+1}: name='{field_name}' id='{field_id}' placeholder='{field_placeholder}' displayed={is_displayed} enabled={is_enabled}")
-                                
-                                if is_displayed and is_enabled:
-                                    password_input = pwd_field
-                                    print("✅ Password field found in same form - this is an email+password form")
-                                    break
-                                elif not is_displayed:
-                                    print(f"    ⚠️ Password field {i+1} exists but is not displayed")
-                                elif not is_enabled:
-                                    print(f"    ⚠️ Password field {i+1} exists but is not enabled")
-                            except Exception as e:
-                                print(f"    Error checking password field {i+1}: {e}")
-                                continue
-                        
-                        if password_input:
-                            break
-                    except Exception as e:
-                        print(f"  Error with password selector {selector}: {e}")
-                        continue
-                
-                if not password_input:
-                    print("✅ No password field in form - this is an email-only form")
-                
                 if progress_callback:
                     progress_callback(15, "Entering email...")
                 
@@ -489,53 +414,19 @@ class DocSendClient:
                     email_input.send_keys(char)
                     time.sleep(random.uniform(0.05, 0.15))  # Random typing delay
                 
-                # If password field is present in same form, fill it now
-                if password_input:
-                    if not password:
-                        print("❌ Password field found but no password provided")
-                        return {
-                            'success': False,
-                            'error': 'Password protected deck - no password provided',
-                            'content': '',
-                            'metadata': {}
-                        }
-                    
-                    if progress_callback:
-                        progress_callback(18, "Entering password...")
-                    
-                    # Scroll to password field and fill it
-                    browser.execute_script("arguments[0].scrollIntoView(true);", password_input)
-                    time.sleep(random.uniform(0.5, 1.0))
-                    
-                    try:
-                        password_input.clear()
-                    except:
-                        try:
-                            password_input.click()
-                            time.sleep(random.uniform(0.3, 0.7))
-                            password_input.clear()
-                        except:
-                            browser.execute_script("arguments[0].value = '';", password_input)
-                    
-                    # Send the password with human-like typing speed
-                    for char in password:
-                        password_input.send_keys(char)
-                        time.sleep(random.uniform(0.05, 0.15))
-                    
-                    print("✅ Both email and password filled in same form")
-                
                 # Look for submit button with better detection
                 submit_clicked = False
                 submit_selectors = [
                     "input[value='Continue']",              # DocSend continue button (most common)
                     "input[type='submit'][value='Continue']", # Specific continue submit
-                    "input[value='Submit']",                # DocSend submit button
-                    "input[type='submit'][value='Submit']", # Specific submit button
+                    "button:contains('Continue')",          # Continue button text
                     "input[name='commit'][value='Continue']", # DocSend commit with Continue value
-                    "input[name='commit'][value='Submit']", # DocSend commit with Submit value
                     "input[name='commit']",                 # DocSend specific submit
                     "button[type='submit']",
                     "input[type='submit']", 
+                    "button:contains('Submit')",
+                    "button:contains('Access')",
+                    "button:contains('View')",
                     ".submit-button",
                     ".continue-button"
                 ]
@@ -557,7 +448,7 @@ class DocSendClient:
                         print(f"Error with selector {selector}: {e}")
                         continue
                 
-                # If no specific selectors worked, try finding any button with "Continue" or "Submit" text
+                # If no specific selectors worked, try finding any button with "Continue" text
                 if not submit_clicked:
                     try:
                         all_buttons = browser.find_elements(By.TAG_NAME, "button")
@@ -566,8 +457,8 @@ class DocSendClient:
                         for element in all_buttons + all_inputs:
                             if element.is_displayed() and element.is_enabled():
                                 text = element.text or element.get_attribute('value') or ''
-                                if any(keyword in text.lower() for keyword in ['continue', 'submit', 'access', 'view']):
-                                    print(f"Found button by text search: '{text}'")
+                                if 'continue' in text.lower():
+                                    print(f"Found Continue button by text search: '{text}'")
                                     browser.execute_script("arguments[0].click();", element)
                                     submit_clicked = True
                                     break
@@ -585,26 +476,19 @@ class DocSendClient:
                 print(f"After email submission - URL: {browser.current_url}")
                 print(f"After email submission - Title: {browser.title}")
                 
-                # Wait for the page to respond to form submission
-                if password_input:
-                    print("Waiting for page response after email+password submission...")
-                else:
-                    print("Waiting for page response after email submission...")
-                time.sleep(random.uniform(3.0, 5.0))
+                # Wait for the email popup/modal to disappear (key insight!)
+                print("Waiting for email popup to disappear...")
+                try:
+                    # Wait for the email form to disappear (indicating successful submission)
+                    WebDriverWait(browser, 10).until_not(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='link_auth_form[email]']"))
+                    )
+                    print("✅ Email popup disappeared - submission successful!")
+                except TimeoutException:
+                    print("⚠️ Email popup still present - submission may have failed")
                 
-                # Check what happened after submission
-                print(f"After form submission - URL: {browser.current_url}")
-                print(f"After form submission - Title: {browser.title}")
-                
-                # If we already handled password, skip the password detection logic
-                if password_input:
-                    print("✅ Email+password form was submitted together")
-                    # Wait a bit more for content to load after combined submission
-                    time.sleep(random.uniform(2.0, 3.0))
-                else:
-                    print("✅ Email-only form was submitted")
-                    # For email-only decks, wait a bit more for content to load
-                    time.sleep(random.uniform(2.0, 3.0))
+                # Wait a bit longer for deck content to load dynamically
+                time.sleep(random.uniform(2.0, 3.0))
                 
             except TimeoutException:
                 # No email required, continue
@@ -614,118 +498,78 @@ class DocSendClient:
                 # Continue anyway - maybe email isn't required
                 pass
             
-                                    # Handle password prompt if present (after email) - only if not already handled
-            if not password_input:  # Only check for separate password if we didn't handle it in the form
+            # Handle password prompt if present (after email)
+            try:
+                password_input = WebDriverWait(browser, 3).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='password']"))
+                )
+                if not password:
+                    return {
+                        'success': False,
+                        'error': 'Password protected deck - no password provided',
+                        'content': '',
+                        'metadata': {}
+                    }
+                
+                if progress_callback:
+                    progress_callback(20, "Entering password...")
+                
+                # Scroll to element to ensure it's visible
+                browser.execute_script("arguments[0].scrollIntoView(true);", password_input)
+                time.sleep(random.uniform(0.5, 1.0))
+                
+                # Try to interact with the element
                 try:
-                    # Look for password field with a longer wait since it might appear after email processing
-                    password_input = WebDriverWait(browser, 8).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='password']"))
-                    )
-                    print("✅ Separate password field found and clickable")
-                    
-                    if not password:
-                        print("❌ Password required but not provided")
-                        return {
-                            'success': False,
-                            'error': 'Password protected deck - no password provided',
-                            'content': '',
-                            'metadata': {}
-                        }
-                    
-                    if progress_callback:
-                        progress_callback(20, "Entering password...")
-                    
-                    # Scroll to element to ensure it's visible
-                    browser.execute_script("arguments[0].scrollIntoView(true);", password_input)
-                    time.sleep(random.uniform(0.5, 1.0))
-                    
-                    # Try to interact with the element
+                    password_input.clear()
+                except:
+                    # If clear fails, try clicking first then clearing
                     try:
+                        password_input.click()
+                        time.sleep(random.uniform(0.3, 0.7))
                         password_input.clear()
                     except:
-                        # If clear fails, try clicking first then clearing
-                        try:
-                            password_input.click()
-                            time.sleep(random.uniform(0.3, 0.7))
-                            password_input.clear()
-                        except:
-                            # If still fails, use JavaScript to clear
-                            browser.execute_script("arguments[0].value = '';", password_input)
-                    
-                    # Send the password with human-like typing speed
-                    for char in password:
-                        password_input.send_keys(char)
-                        time.sleep(random.uniform(0.05, 0.15))  # Random typing delay
-                    
-                    # Look for submit button with better detection
-                    submit_clicked = False
-                    submit_selectors = [
-                        "input[value='Continue']",              # DocSend continue button
-                        "input[type='submit'][value='Continue']", # Specific continue submit
-                        "input[value='Submit']",                # DocSend submit button
-                        "input[type='submit'][value='Submit']", # Specific submit button
-                        "input[name='commit'][value='Continue']", # DocSend commit with Continue value
-                        "input[name='commit'][value='Submit']", # DocSend commit with Submit value
-                        "input[name='commit']",                 # DocSend specific submit
-                        "button[type='submit']",
-                        "input[type='submit']", 
-                        ".submit-button",
-                        ".continue-button"
-                    ]
-                    
-                    for selector in submit_selectors:
-                        try:
-                            submit_buttons = browser.find_elements(By.CSS_SELECTOR, selector)
-                            for submit_button in submit_buttons:
-                                if submit_button.is_enabled() and submit_button.is_displayed():
-                                    button_text = submit_button.text or submit_button.get_attribute('value') or 'no-text'
-                                    print(f"Found password submit button: '{button_text}' with selector: {selector}")
-                                    browser.execute_script("arguments[0].click();", submit_button)
-                                    submit_clicked = True
-                                    break
-                            if submit_clicked:
-                                break
-                        except Exception as e:
-                            print(f"Error with password selector {selector}: {e}")
-                            continue
-                    
-                    # Enhanced fallback for password submission
-                    if not submit_clicked:
-                        try:
-                            all_buttons = browser.find_elements(By.TAG_NAME, "button")
-                            all_inputs = browser.find_elements(By.TAG_NAME, "input")
-                            
-                            for element in all_buttons + all_inputs:
-                                if element.is_displayed() and element.is_enabled():
-                                    text = element.text or element.get_attribute('value') or ''
-                                    if any(keyword in text.lower() for keyword in ['continue', 'submit', 'access', 'view']):
-                                        print(f"Found password button by text search: '{text}'")
-                                        browser.execute_script("arguments[0].click();", element)
-                                        submit_clicked = True
-                                        break
-                        except Exception as e:
-                            print(f"Error in password text-based button search: {e}")
-                    
-                    if not submit_clicked:
-                        print("No password submit button found, trying Enter key")
-                        password_input.send_keys(Keys.RETURN)
-                    
-                    # Wait for password submission to process
-                    print("Waiting for password submission to process...")
-                    time.sleep(random.uniform(3.0, 5.0))
-                    
-                    # Check result after password submission
-                    print(f"After password submission - URL: {browser.current_url}")
-                    print(f"After password submission - Title: {browser.title}")
-                    
-                except TimeoutException:
-                    print("✅ No separate password field found - proceeding to deck content")
-                except Exception as e:
-                    print(f"Password input handling failed: {str(e)}")
-                    # Continue anyway - maybe password isn't required
-                    pass
-            else:
-                print("✅ Password already handled in combined form - skipping separate password check")
+                        # If still fails, use JavaScript to clear
+                        browser.execute_script("arguments[0].value = '';", password_input)
+                
+                # Send the password with human-like typing speed
+                for char in password:
+                    password_input.send_keys(char)
+                    time.sleep(random.uniform(0.05, 0.15))  # Random typing delay
+                
+                # Look for submit button with better detection
+                submit_clicked = False
+                submit_selectors = [
+                    "button[type='submit']",
+                    "input[type='submit']", 
+                    "button:contains('Continue')",
+                    "button:contains('Submit')",
+                    "button:contains('Access')",
+                    "button:contains('View')",
+                    ".submit-button",
+                    ".continue-button"
+                ]
+                
+                for selector in submit_selectors:
+                    try:
+                        submit_button = browser.find_element(By.CSS_SELECTOR, selector)
+                        if submit_button.is_enabled() and submit_button.is_displayed():
+                            browser.execute_script("arguments[0].click();", submit_button)
+                            submit_clicked = True
+                            break
+                    except:
+                        continue
+                
+                if not submit_clicked:
+                    # Fallback: try pressing Enter
+                    password_input.send_keys(Keys.RETURN)
+                
+                time.sleep(3)
+            except TimeoutException:
+                pass  # No password required
+            except Exception as e:
+                print(f"Password input handling failed: {str(e)}")
+                # Continue anyway - maybe password isn't required
+                pass
             
             if progress_callback:
                 progress_callback(30, "Finding deck pages...")
