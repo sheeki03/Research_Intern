@@ -1,9 +1,172 @@
+# ===== PYTHON =====
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===== VIRTUAL ENVIRONMENTS =====
 .env
-.DS_Store
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ===== DOCKER =====
+# Docker volumes and data
+docker-data/
+.docker/
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ===== IDE & EDITORS =====
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===== TESTING =====
 .pytest_cache/
-logs/*
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ===== JUPYTER NOTEBOOKS =====
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# ===== APPLICATION SPECIFIC =====
+# Logs
+logs/
+*.log
+
+# Configuration files with sensitive data
 config/users.yaml
-output/*
+config/secrets.yaml
+config/local.yaml
+
+# Output and reports
+output/
+reports/
+cache/
+temp/
+tmp/
+
+# API keys and secrets
+.env.local
+.env.production
+.env.staging
+secrets.json
+api_keys.txt
+
+# ===== BROWSER AUTOMATION =====
+# Playwright
+playwright-report/
+test-results/
+
+# Selenium
+selenium-debug.log
+geckodriver.log
+chromedriver.log
+
+# ===== AI/ML =====
+# Model files
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+models/
+checkpoints/
+
+# Vector databases
+faiss_index/
+chroma_db/
+
+# ===== DOCUMENTATION =====
+# Sphinx documentation
+docs/_build/
+
+# ===== BACKUP & TEMPORARY FILES =====
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+.#*
+\#*#
+
+# ===== SPECIFIC FILES TO IGNORE =====
+# Specific log files that were previously tracked
+logs/writer.log
+logs/watcher.log
+logs/research.log
+logs/audit.log
+
+# Specific reports that were previously tracked
+reports/enhanced_report_*.md
+
+# Cursor AI rules (if you want to keep them private)
+.cursorrules
+
+# ===== SYSTEM FILES =====
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ===== REDIS DATA =====
+dump.rdb
+appendonly.aof
+
+# ===== NODE.JS (if any frontend components) =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

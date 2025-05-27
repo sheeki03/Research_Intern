@@ -1,0 +1,88 @@
+# ===== VERSION CONTROL =====
+.git
+.gitignore
+.gitattributes
+
+# ===== DOCUMENTATION =====
+README.md
+*.md
+docs/
+
+# ===== DOCKER FILES =====
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ===== SCRIPTS =====
+docker-run.sh
+docker-manage.sh
+
+# ===== IDE & EDITORS =====
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# ===== VIRTUAL ENVIRONMENTS =====
+.env*
+.venv/
+venv/
+env/
+
+# ===== LOGS & OUTPUT =====
+logs/
+output/
+reports/
+cache/
+temp/
+tmp/
+*.log
+
+# ===== TESTING =====
+tests/
+test_*.py
+*_test.py
+
+# ===== BACKUP FILES =====
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+
+# ===== SYSTEM FILES =====
+Thumbs.db
+.DS_Store
+.Trashes
+
+# ===== NODE.JS (if any) =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# ===== AI/ML MODELS =====
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+models/
+checkpoints/
+
+# ===== BROWSER DATA =====
+playwright-report/
+test-results/
+selenium-debug.log
+geckodriver.log
+chromedriver.log 
