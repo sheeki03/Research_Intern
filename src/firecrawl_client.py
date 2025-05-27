@@ -19,7 +19,26 @@ class FirecrawlClient:
         cache_ttl: int = 3600  # 1 hour cache
     ):
         actual_url_used = base_url or os.getenv("FIRECRAWL_API_URL", "http://localhost:3002")
+        
+        # Clean up base URL - remove any trailing API paths
+        original_url = actual_url_used
+        
+        # Remove various possible trailing paths
+        paths_to_remove = ['/v1/scrape', '/v0/scrape', '/scrape', '/api/v1/scrape', '/api/v0/scrape']
+        for path in paths_to_remove:
+            if actual_url_used.endswith(path):
+                actual_url_used = actual_url_used[:-len(path)]
+                print(f"DEBUG: Cleaned up base URL by removing '{path}' suffix")
+                break
+        
+        # Remove trailing slash if present
+        actual_url_used = actual_url_used.rstrip('/')
+        
+        if original_url != actual_url_used:
+            print(f"DEBUG: URL cleaned from '{original_url}' to '{actual_url_used}'")
+        
         print(f"DEBUG: FirecrawlClient initializing with base_url: {actual_url_used}")
+        print(f"DEBUG: Environment FIRECRAWL_API_URL: {os.getenv('FIRECRAWL_API_URL', 'NOT_SET')}")
         self.base_url = actual_url_used
         self.api_key = os.getenv("FIRECRAWL_API_KEY")
         self.cache_ttl = cache_ttl
@@ -197,6 +216,15 @@ class FirecrawlClient:
 
         headers = {
             "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
             **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})
         }
         # Ensure scrape requests markdown format

@@ -7,6 +7,8 @@ from urllib.parse import urljoin, urlparse
 import logging
 import xml.etree.ElementTree as ET
 import asyncio
+import random
+import time
 
 # It's good practice to configure logging at the application level.
 # For this module, we'll get a logger instance.
@@ -15,6 +17,261 @@ logger = logging.getLogger(__name__)
 
 MAX_SITEMAP_DEPTH = 5 # To prevent infinite loops with misconfigured sitemaps
 MAX_SITEMAPS_TO_PROCESS = 50 # To cap processing time for very large sites
+
+# Enhanced bot protection bypass configurations with more sophisticated techniques
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/120.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0"
+]
+
+# Additional headers for enhanced bot protection bypass
+ENHANCED_HEADERS = [
+    {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "max-age=0",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    },
+    {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+]
+
+def get_bot_protection_headers(enhanced: bool = False) -> dict:
+    """
+    Generate headers that mimic real browser requests to bypass bot protection.
+    
+    Args:
+        enhanced: If True, use more sophisticated headers for challenging sites
+    
+    Returns:
+        Dictionary of HTTP headers that appear more human-like
+    """
+    base_headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "DNT": "1",
+        "Connection": "keep-alive"
+    }
+    
+    if enhanced:
+        # Use more sophisticated headers for challenging sites
+        enhanced_set = random.choice(ENHANCED_HEADERS)
+        base_headers.update(enhanced_set)
+    else:
+        # Standard headers for normal sites
+        base_headers.update({
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0"
+        })
+    
+    return base_headers
+
+async def make_protected_request(url: str, client: httpx.AsyncClient, delay_range: tuple = (1, 3), retry_count: int = 3, enhanced: bool = False) -> httpx.Response:
+    """
+    Make an HTTP request with enhanced bot protection bypass measures.
+    
+    Args:
+        url: The URL to request
+        client: The httpx client to use
+        delay_range: Random delay range in seconds before making request
+        retry_count: Number of retries for bot protection responses
+        enhanced: Use enhanced protection for challenging sites
+        
+    Returns:
+        httpx.Response object
+        
+    Raises:
+        httpx.HTTPStatusError: For HTTP error responses
+        httpx.RequestError: For connection/request errors
+    """
+    last_exception = None
+    
+    # Detect challenging domains that need enhanced protection
+    challenging_domains = ['rollbit.com', 'cloudflare.com', 'ddos-guard.net', 'github.com']
+    if any(domain in url.lower() for domain in challenging_domains):
+        enhanced = True
+        retry_count = max(retry_count, 4)  # More retries for challenging sites
+        logger.info(f"Detected challenging domain in {url}, using enhanced protection")
+    
+    for attempt in range(retry_count + 1):
+        try:
+            # Progressive delay increase for challenging sites
+            if enhanced and attempt > 0:
+                delay = random.uniform(3, 8) * (1.5 ** attempt)
+            else:
+                delay = random.uniform(*delay_range)
+            
+            await asyncio.sleep(delay)
+            
+            # Use enhanced headers for challenging sites
+            headers = get_bot_protection_headers(enhanced=enhanced)
+            
+            # Add referer for some sites that check it
+            parsed_url = urlparse(url)
+            if parsed_url.netloc:
+                # For enhanced protection, use more realistic referers
+                if enhanced:
+                    referers = [
+                        f"{parsed_url.scheme}://{parsed_url.netloc}/",
+                        f"https://www.google.com/",
+                        f"https://duckduckgo.com/",
+                        f"{parsed_url.scheme}://{parsed_url.netloc}/sitemap"
+                    ]
+                    headers["Referer"] = random.choice(referers)
+                else:
+                    headers["Referer"] = f"{parsed_url.scheme}://{parsed_url.netloc}/"
+            
+            logger.debug(f"Making {'enhanced ' if enhanced else ''}protected request to {url} with {delay:.2f}s delay (attempt {attempt + 1}/{retry_count + 1})")
+            
+            # For enhanced protection, add more realistic request patterns
+            if enhanced:
+                # Simulate browser behavior with multiple requests
+                if attempt == 0:
+                    # First try a simple HEAD request to "warm up" the connection
+                    try:
+                        await client.head(url, headers=headers, timeout=10.0)
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                    except:
+                        pass  # Ignore HEAD request failures
+            
+            response = await client.get(url, headers=headers, timeout=15.0)
+            
+            # Enhanced bot protection detection
+            if response.status_code == 403:
+                content_lower = response.text.lower()
+                bot_protection_indicators = [
+                    "cloudflare", "just a moment", "checking your browser", 
+                    "ddos protection", "access denied", "blocked", 
+                    "security check", "captcha", "ray id", "cf-ray",
+                    "please wait", "verifying", "challenge", "protection"
+                ]
+                
+                if any(indicator in content_lower for indicator in bot_protection_indicators):
+                    logger.warning(f"Enhanced bot protection detected for {url}: {response.status_code} (attempt {attempt + 1})")
+                    
+                    if attempt < retry_count:
+                        # Exponential backoff with jitter for retries
+                        retry_delay = random.uniform(5, 12) * (2 ** attempt) + random.uniform(0, 3)
+                        logger.info(f"Retrying with enhanced protection after {retry_delay:.2f}s delay...")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"Enhanced bot protection bypass failed after {retry_count + 1} attempts for {url}")
+            
+            # Check for successful response or acceptable errors
+            if response.status_code in [200, 404]:  # 404 is acceptable for robots.txt/sitemap
+                return response
+            elif response.status_code in [301, 302, 307, 308]:  # Redirects are handled by httpx
+                return response
+            else:
+                # Other status codes might indicate bot protection
+                logger.warning(f"Unexpected status code {response.status_code} for {url} (attempt {attempt + 1})")
+                if attempt < retry_count:
+                    continue
+                else:
+                    return response  # Return the response anyway for final attempt
+            
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            last_exception = e
+            if attempt < retry_count:
+                retry_delay = random.uniform(3, 7) * (1.8 ** attempt)
+                logger.warning(f"Request failed (attempt {attempt + 1}), retrying after {retry_delay:.2f}s: {str(e)}")
+                await asyncio.sleep(retry_delay)
+                continue
+            else:
+                break
+    
+    # If we get here, all attempts failed
+    if last_exception:
+        raise last_exception
+    else:
+        # This shouldn't happen, but just in case
+        raise httpx.RequestError(f"All {retry_count + 1} attempts failed for {url}")
+
+async def try_alternative_sitemap_locations(domain: str, client: httpx.AsyncClient) -> List[str]:
+    """
+    Try alternative common sitemap locations when standard ones fail.
+    Enhanced with more comprehensive sitemap location checking.
+    
+    Args:
+        domain: The domain to check (e.g., "example.com")
+        client: The httpx client to use
+        
+    Returns:
+        List of sitemap URLs that were successfully found
+    """
+    alternative_paths = [
+        "/sitemap_index.xml",
+        "/sitemaps.xml", 
+        "/sitemap/sitemap.xml",
+        "/sitemap/index.xml",
+        "/wp-sitemap.xml",  # WordPress
+        "/sitemap.php",     # Dynamic sitemaps
+        "/feeds/sitemap.xml",
+        "/sitemap1.xml",    # Numbered sitemaps
+        "/sitemap-index.xml",
+        "/sitemaps/sitemap.xml",
+        "/public/sitemap.xml",
+        "/static/sitemap.xml",
+        "/assets/sitemap.xml"
+    ]
+    
+    found_sitemaps = []
+    base_url = f"https://{domain}"
+    
+    # Use enhanced protection for challenging domains
+    challenging_domains = ['rollbit.com', 'cloudflare.com', 'ddos-guard.net', 'github.com']
+    enhanced = any(challenging in domain.lower() for challenging in challenging_domains)
+    
+    for path in alternative_paths:
+        sitemap_url = f"{base_url}{path}"
+        try:
+            response = await make_protected_request(
+                sitemap_url, 
+                client, 
+                delay_range=(0.8, 2.0), 
+                retry_count=2,
+                enhanced=enhanced
+            )
+            if response.status_code == 200:
+                content = response.text.strip()
+                if content.startswith(("<?xml", "<sitemapindex", "<urlset")):
+                    logger.info(f"Found alternative sitemap at: {sitemap_url}")
+                    found_sitemaps.append(sitemap_url)
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            # Silently continue to next alternative
+            continue
+    
+    return found_sitemaps
 
 async def fetch_robots_txt(domain_or_url: str) -> Optional[str]:
     """
@@ -57,11 +314,12 @@ async def fetch_robots_txt(domain_or_url: str) -> Optional[str]:
         return None
 
     # Using a shared client for potential multiple requests (though only one successful here)
-    async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
         for url in urls_to_try:
             logger.debug(f"Attempting to fetch robots.txt from: {url}")
             try:
-                response = await client.get(url)
+                # Use enhanced bot protection bypass for robots.txt requests
+                response = await make_protected_request(url, client, delay_range=(0.5, 2.0), enhanced=True)
                 response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx
                 logger.info(f"Successfully fetched robots.txt from {url} (status {response.status_code})")
                 return response.text
@@ -144,8 +402,9 @@ async def fetch_sitemap_content(sitemap_url: str) -> Optional[str]:
 
     logger.info(f"Attempting to fetch sitemap content from: {sitemap_url}")
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client: # Increased timeout for potentially larger files
-            response = await client.get(sitemap_url)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25.0) as client: # Increased timeout for potentially larger files
+            # Use enhanced bot protection bypass for sitemap requests
+            response = await make_protected_request(sitemap_url, client, delay_range=(1.0, 3.0), enhanced=True)
             response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx
             
             # httpx handles content decoding (like gzip) automatically based on Content-Encoding header.
@@ -245,6 +504,58 @@ def parse_xml_sitemap(xml_content: str, sitemap_url: str, target_domain: str) ->
     logger.info(f"Parsed from {sitemap_url}: {len(final_page_urls)} page URLs, {len(final_further_sitemaps)} further sitemap URLs for domain {target_domain}.")
     return final_page_urls, final_further_sitemaps
 
+async def try_additional_sitemap_paths(domain: str, client: httpx.AsyncClient) -> List[str]:
+    """
+    Try additional common sitemap paths that challenging sites might use.
+    
+    Args:
+        domain: The domain to check (e.g., "example.com")
+        client: The httpx client to use
+        
+    Returns:
+        List of sitemap URLs that were successfully found
+    """
+    additional_paths = [
+        "/help/sitemap.xml",
+        "/support/sitemap.xml", 
+        "/docs/sitemap.xml",
+        "/api/sitemap.xml",
+        "/blog/sitemap.xml",
+        "/en/sitemap.xml",
+        "/sitemap/help.xml",
+        "/sitemaps/help.xml",
+        "/content/sitemap.xml",
+        "/pages/sitemap.xml",
+        "/site/sitemap.xml"
+    ]
+    
+    found_sitemaps = []
+    base_url = f"https://{domain}"
+    
+    # Use enhanced protection for challenging domains
+    challenging_domains = ['rollbit.com', 'cloudflare.com', 'ddos-guard.net', 'github.com']
+    enhanced = any(challenging in domain.lower() for challenging in challenging_domains)
+    
+    for path in additional_paths:
+        sitemap_url = f"{base_url}{path}"
+        try:
+            response = await make_protected_request(
+                sitemap_url, 
+                client, 
+                delay_range=(2.0, 4.0), 
+                retry_count=3,
+                enhanced=enhanced
+            )
+            if response.status_code == 200:
+                content = response.text.strip()
+                if content.startswith(("<?xml", "<sitemapindex", "<urlset")):
+                    logger.info(f"Found additional sitemap at: {sitemap_url}")
+                    found_sitemaps.append(sitemap_url)
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            continue
+    
+    return found_sitemaps
+
 async def discover_sitemap_urls(initial_url: str) -> List[str]:
     """
     Facade function to discover all unique page URLs from a website's sitemaps.
@@ -306,6 +617,17 @@ async def discover_sitemap_urls(initial_url: str) -> List[str]:
         common_sitemap_url = urljoin(base_url_for_domain, "/sitemap.xml")
         logger.info(f"No sitemaps in robots.txt (or all filtered out). Trying common location: {common_sitemap_url}")
         await sitemaps_to_process_queue.put((common_sitemap_url, 0))
+        
+        # Also try alternative sitemap locations for better coverage
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25.0) as alt_client:
+            alternative_sitemaps = await try_alternative_sitemap_locations(target_domain, alt_client)
+            for alt_sitemap in alternative_sitemaps:
+                await sitemaps_to_process_queue.put((alt_sitemap, 0))
+            
+            # Try additional sitemap paths for challenging sites
+            additional_sitemaps = await try_additional_sitemap_paths(target_domain, alt_client)
+            for additional_sitemap in additional_sitemaps:
+                await sitemaps_to_process_queue.put((additional_sitemap, 0))
 
     # 3. Process the sitemap queue
     while not sitemaps_to_process_queue.empty() and sitemaps_processed_count < MAX_SITEMAPS_TO_PROCESS:

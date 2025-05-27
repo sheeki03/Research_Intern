@@ -675,8 +675,23 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     # Display scan results
                     await self._render_sitemap_results()
                     
-                    if sitemap_url and not st.session_state.get('notion_sitemap_scan_in_progress'):
-                        st.info(f"🗺️ Will scan sitemap: {sitemap_url}")
+                    # Show sitemap scan results if scan completed (regardless of URLs found)
+                    if st.session_state.get('notion_sitemap_scan_completed'):
+                        discovered_urls = st.session_state.get('notion_discovered_sitemap_urls', [])
+                        
+                        if discovered_urls:
+                            st.success(f"🗺️ Found {len(discovered_urls)} URLs from sitemap")
+                            # Show first few URLs as preview (without expander to avoid nesting)
+                            st.markdown("**📋 Sitemap URLs Preview:**")
+                            for i, url in enumerate(discovered_urls[:5]):  # Show first 5
+                                st.text(f"{i+1}. {url}")
+                            if len(discovered_urls) > 5:
+                                st.text(f"... and {len(discovered_urls) - 5} more URLs")
+                        else:
+                            st.warning(f"🗺️ Sitemap scan completed but found 0 URLs for {sitemap_url}")
+                            st.info("💡 Try a different website or check if the site has a sitemap")
+                    elif sitemap_url and not st.session_state.get('notion_sitemap_scan_in_progress'):
+                        st.info(f"🗺️ Ready to scan sitemap: {sitemap_url}")
                 
                 elif crawl_option == "Option B: Crawl from URL":
                     st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
