@@ -44,6 +44,7 @@ numpy>=1.24.0
 
 # ===== AUTHENTICATION & SECURITY =====
 bcrypt>=4.1.0
+cryptography>=41.0.0
 
 # ===== CONFIGURATION & ENVIRONMENT =====
 python-dotenv>=1.0.1

@@ -14,6 +14,7 @@ from src.config import USERS_CONFIG_PATH, DEFAULT_PROMPTS, SYSTEM_PROMPT
 from src.audit_logger import get_audit_logger
 from src.pages.interactive_research import InteractiveResearchPage
 from src.pages.notion_automation import NotionAutomationPage
+from src.utils.session_persistence import url_session_persistence
 
 
 class AppController:
@@ -55,6 +56,7 @@ class AppController:
 
     def _init_global_session_state(self) -> None:
         """Initialize global session state variables."""
+        # Initialize all session state keys first
         if "authenticated" not in st.session_state:
             st.session_state.authenticated = False
         if "username" not in st.session_state:
@@ -67,6 +69,58 @@ class AppController:
             st.session_state.system_prompt = SYSTEM_PROMPT
         if "current_page" not in st.session_state:
             st.session_state.current_page = "Interactive Research"
+        if "session_restored" not in st.session_state:
+            st.session_state.session_restored = False
+        
+        # Try to restore session from URL after initialization
+        self._try_restore_session()
+
+    def _try_restore_session(self) -> None:
+        """Try to restore session from URL parameters."""
+        try:
+            # Only try to restore once per session
+            if st.session_state.get('session_restore_attempted', False):
+                return
+            
+            st.session_state.session_restore_attempted = True
+            
+            # Try to load session from URL
+            session_data = url_session_persistence.load_session_from_url()
+            
+            if session_data:
+                username = session_data.get('username')
+                role = session_data.get('role')
+                
+                # Verify user still exists in the system
+                users = self._load_users()
+                
+                if username in users:
+                    # Restore session
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.session_state.role = role
+                    st.session_state.session_restored = True
+                    
+                    # Load user-specific system prompt
+                    user_data = users.get(username, {})
+                    user_prompt = user_data.get("system_prompt")
+                    if not user_prompt:
+                        user_prompt = DEFAULT_PROMPTS.get(role, SYSTEM_PROMPT)
+                    st.session_state.system_prompt = user_prompt
+                    
+                    # Log session restoration
+                    get_audit_logger(
+                        user=username,
+                        role=role,
+                        action="SESSION_RESTORED",
+                        details=f"Session restored from URL for user: {username}",
+                    )
+                else:
+                    # User no longer exists, clear the session
+                    st.query_params.clear()
+                    
+        except Exception as e:
+            print(f"Error restoring session: {e}")
 
     async def _render_sidebar(self) -> None:
         """Render the sidebar with authentication and navigation."""
@@ -133,6 +187,12 @@ class AppController:
         st.subheader("User Panel")
         st.write(f"👤 **User**: {st.session_state.username}")
         st.write(f"🔑 **Role**: {st.session_state.get('role', 'Unknown')}")
+        
+        # Show session status
+        if st.session_state.get('session_restored', False):
+            st.success("🔄 Session restored from URL")
+        else:
+            st.info("🔒 Session active (persists across reloads)")
 
         if st.button("Logout", key="logout_btn", use_container_width=True):
             await self._handle_logout()
@@ -285,7 +345,28 @@ class AppController:
                 user_prompt = DEFAULT_PROMPTS.get(st.session_state.role, SYSTEM_PROMPT)
             st.session_state.system_prompt = user_prompt
 
-            st.success("Login successful!")
+            # Save session for persistence
+            try:
+                # Create session token and update URL
+                session_token = url_session_persistence._create_session_token(username, st.session_state.role)
+                st.query_params["session"] = session_token
+                
+                st.success("Login successful! Session will persist across page reloads.")
+                
+                # Show session info
+                with st.expander("🔒 Session Information", expanded=False):
+                    st.info(f"""
+                    **Session Active**: Your login will persist for 24 hours
+                    **Username**: {username}
+                    **Role**: {st.session_state.role}
+                    
+                    You can bookmark this page to maintain your session across browser restarts.
+                    """)
+                    
+            except Exception as e:
+                st.warning(f"Session persistence failed: {e}")
+                st.success("Login successful!")
+
             get_audit_logger(
                 user=username,
                 role=st.session_state.role,
@@ -352,6 +433,14 @@ class AppController:
         st.session_state.system_prompt = SYSTEM_PROMPT
         st.session_state.show_signup = False
         st.session_state.current_page = "Interactive Research"
+        st.session_state.session_restored = False
+        st.session_state.session_restore_attempted = False
+
+        # Clear session from URL
+        try:
+            st.query_params.clear()
+        except Exception as e:
+            print(f"Error clearing session from URL: {e}")
 
         get_audit_logger(
             user=username,
@@ -360,7 +449,7 @@ class AppController:
             details=f"User {username} logged out",
         )
 
-        st.success("Logged out successfully!")
+        st.success("Logged out successfully! Session cleared.")
         st.rerun()
 
     def _load_users(self) -> Dict[str, Any]:
