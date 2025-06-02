@@ -10,6 +10,7 @@ import io
 import re
 from urllib.parse import urlparse, urljoin
 from datetime import datetime
+import time
 
 try:
     import fitz  # PyMuPDF
@@ -34,7 +35,8 @@ from src.core.rag_utils import (
     DEFAULT_EMBEDDING_MODEL,
     TOP_K_RESULTS
 )
-from src.models.chat_models import ChatSession, ChatHistoryItem
+from src.models.chat_models import ChatSession, ChatHistoryItem, UserHistoryEntry
+from src.services.user_history_service import user_history_service
 from src.audit_logger import (
     get_audit_logger, 
     log_ai_interaction, 
@@ -68,6 +70,9 @@ class InteractiveResearchPage(BasePage):
         
         # Initialize clients
         self._init_clients()
+        
+        # Render sidebar with history
+        self._render_sidebar_history()
         
         # Show page content
         self.show_page_header("Unified Research Interface")
@@ -116,6 +121,124 @@ class InteractiveResearchPage(BasePage):
         
         # Chat interface
         await self._render_chat_interface()
+    
+    def _render_sidebar_history(self) -> None:
+        """Render sidebar with user's chat history."""
+        username = st.session_state.get('username')
+        if not username:
+            return
+        
+        with st.sidebar:
+            st.markdown("## 📚 Your Recent Sessions")
+            
+            try:
+                # Get user's recent chat sessions
+                sessions = user_history_service.get_user_chat_sessions(username, 48)
+                
+                if not sessions:
+                    st.info("No recent sessions found")
+                    st.caption("Try generating a report and asking questions to create session history")
+                    return
+                
+                st.markdown(f"*Last 48 hours ({len(sessions)} sessions)*")
+                
+                for session in sessions:
+                    # Format timestamp
+                    if isinstance(session['last_activity'], str):
+                        last_activity = datetime.fromisoformat(session['last_activity'].replace('Z', '+00:00'))
+                    else:
+                        last_activity = session['last_activity']
+                    
+                    time_ago = self._format_time_ago(last_activity)
+                    
+                    # Create session preview
+                    session_title = f"Report: {session['report_id'][:15]}..."
+                    if len(session['report_id']) <= 15:
+                        session_title = f"Report: {session['report_id']}"
+                    
+                    # Session container
+                    with st.container():
+                        col1, col2 = st.columns([3, 1])
+                        
+                        with col1:
+                            if st.button(
+                                f"💬 {session_title}",
+                                key=f"session_{session['session_id']}",
+                                help=f"Resume session from {time_ago}",
+                                use_container_width=True
+                            ):
+                                # Resume this session
+                                self._resume_session(session)
+                        
+                        with col2:
+                            st.markdown(f"<small>{time_ago}</small>", unsafe_allow_html=True)
+                        
+                        # Show session details
+                        st.markdown(
+                            f"<small>💬 {session['message_count']} messages</small>", 
+                            unsafe_allow_html=True
+                        )
+                        st.markdown("---")
+                
+                # Refresh button
+                if st.button("🔄 Refresh History", use_container_width=True):
+                    st.rerun()
+                
+                # Clear old history button
+                if st.button("🧹 Clear Old History", use_container_width=True):
+                    cleaned_count = user_history_service.cleanup_old_entries(48)
+                    st.success(f"Cleaned {cleaned_count} old entries")
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Error loading history: {str(e)}")
+    
+    def _format_time_ago(self, timestamp: datetime) -> str:
+        """Format timestamp as 'time ago' string."""
+        now = datetime.utcnow()
+        if timestamp.tzinfo is not None:
+            # Convert to UTC if timezone-aware
+            timestamp = timestamp.replace(tzinfo=None)
+        
+        diff = now - timestamp
+        
+        if diff.days > 0:
+            return f"{diff.days}d ago"
+        elif diff.seconds > 3600:
+            hours = diff.seconds // 3600
+            return f"{hours}h ago"
+        elif diff.seconds > 60:
+            minutes = diff.seconds // 60
+            return f"{minutes}m ago"
+        else:
+            return "Just now"
+    
+    def _resume_session(self, session: Dict) -> None:
+        """Resume a previous chat session."""
+        try:
+            # Set the current report ID for chat
+            st.session_state.current_report_id_for_chat = session['report_id']
+            st.session_state.report_generated_for_chat = True
+            
+            # Expand chat interface
+            st.session_state.chat_ui_expanded = True
+            
+            # Log session resume
+            user_history_service.add_activity(
+                UserHistoryEntry(
+                    username=session['username'],
+                    activity_type='session_resumed',
+                    session_id=session['session_id'],
+                    report_id=session['report_id'],
+                    details={'action': 'resumed_from_sidebar'}
+                )
+            )
+            
+            st.success(f"📂 Resumed session for {session['report_id']}")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error resuming session: {str(e)}")
     
     def _log_page_access(self) -> None:
         """Log user access to the Interactive Research page."""
@@ -803,6 +926,31 @@ class InteractiveResearchPage(BasePage):
                     report_id = f"report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S%f')}"
                     st.session_state.current_report_id_for_chat = report_id
                     
+                    # Log report generation activity
+                    username = st.session_state.get('username', 'UNKNOWN')
+                    print(f"DEBUG: Report generated for username: {username}")  # Debug print
+                    if username != 'UNKNOWN':
+                        try:
+                            print(f"DEBUG: Logging report generation activity...")  # Debug print
+                            user_history_service.add_activity(
+                                UserHistoryEntry(
+                                    username=username,
+                                    activity_type='report_generated',
+                                    session_id=f"streamlit_{report_id}_{username}",
+                                    report_id=report_id,
+                                    details={
+                                        'action': 'report_generated',
+                                        'report_length': len(report_content),
+                                        'has_documents': bool(st.session_state.processed_documents_content),
+                                        'has_web_content': bool(st.session_state.scraped_web_content or st.session_state.crawled_web_content),
+                                        'has_docsend': bool(st.session_state.get('docsend_content'))
+                                    }
+                                )
+                            )
+                            print(f"DEBUG: Report generation activity logged successfully")  # Debug print
+                        except Exception as e:
+                            print(f"DEBUG: Error logging report generation: {e}")  # Debug print
+                    
                     # Build RAG context
                     await self._build_rag_context(report_id)
                     
@@ -965,7 +1113,6 @@ class InteractiveResearchPage(BasePage):
             system_prompt = st.session_state.get("system_prompt", "You are a helpful research assistant.")
             
             # Record start time for processing time calculation
-            import time
             start_time = time.time()
             
             response = await st.session_state.openrouter_client.generate_response(
@@ -1349,6 +1496,18 @@ Streamlit: {st.__version__}
                     st.session_state.interactive_chat_sessions = {}
                 if report_id not in st.session_state.interactive_chat_sessions:
                     st.session_state.interactive_chat_sessions[report_id] = []
+                    
+                    # Log session creation for new chat sessions
+                    username = st.session_state.get('username', 'UNKNOWN')
+                    print(f"DEBUG: New chat session for username: {username}")  # Debug print
+                    if username != 'UNKNOWN':
+                        try:
+                            session_id = f"streamlit_{report_id}_{username}"
+                            print(f"DEBUG: Logging session creation for: {session_id}")  # Debug print
+                            user_history_service.log_session_created(username, session_id, report_id)
+                            print(f"DEBUG: Session creation logged successfully")  # Debug print
+                        except Exception as e:
+                            print(f"DEBUG: Error logging session creation: {e}")  # Debug print
                 
                 rag_context = st.session_state.get('rag_contexts', {}).get(report_id)
                 client = st.session_state.get('openrouter_client')
@@ -1431,6 +1590,26 @@ Please provide a comprehensive answer based on the research content."""
                         page="Interactive Research - Chat",
                         success=True
                     )
+                    
+                    # Log to user history service
+                    username = st.session_state.get('username', 'UNKNOWN')
+                    print(f"DEBUG: Chat response for username: {username}")  # Debug print
+                    if username != 'UNKNOWN':
+                        try:
+                            # Generate or get session ID for this report
+                            session_id = f"streamlit_{report_id}_{username}"
+                            print(f"DEBUG: Logging chat message for session: {session_id}")  # Debug print
+                            
+                            user_history_service.log_chat_message(
+                                username=username,
+                                session_id=session_id,
+                                report_id=report_id,
+                                query=question,
+                                response=response
+                            )
+                            print(f"DEBUG: Chat message logged successfully")  # Debug print
+                        except Exception as e:
+                            print(f"DEBUG: Error logging chat message: {e}")  # Debug print
                     
                     # Add to chat history
                     chat_entry = {
