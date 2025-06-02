@@ -125,7 +125,38 @@ class AppController:
     async def _render_sidebar(self) -> None:
         """Render the sidebar with authentication and navigation."""
         with st.sidebar:
-            st.title(f"AI Research Agent | Commit: {self._get_git_commit()}")
+            # Custom CSS for ultra-compact sidebar
+            st.markdown("""
+            <style>
+            .stSidebar .stMarkdown h4 {
+                margin-top: 0rem !important;
+                margin-bottom: 0.1rem !important;
+            }
+            .stSidebar .stMarkdown h5 {
+                margin-top: 0rem !important;
+                margin-bottom: 0rem !important;
+                font-size: 1.1rem !important;
+            }
+            .stSidebar .element-container {
+                margin-bottom: 0.1rem !important;
+            }
+            .stSidebar hr {
+                margin-top: 0.2rem !important;
+                margin-bottom: 0.2rem !important;
+            }
+            .stSidebar .stMarkdown p {
+                margin-bottom: 0.1rem !important;
+            }
+            .stSidebar .stCaption {
+                margin-bottom: 0rem !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Very compact header
+            st.markdown(f"##### 🤖 AI Research Agent")
+            if self._get_git_commit():
+                st.caption(f"v{self._get_git_commit()}")
             st.markdown("---")
 
             if not st.session_state.authenticated:
@@ -184,22 +215,29 @@ class AppController:
 
     async def _render_user_panel(self) -> None:
         """Render the user panel for authenticated users."""
-        st.subheader("User Panel")
-        st.write(f"👤 **User**: {st.session_state.username}")
-        st.write(f"🔑 **Role**: {st.session_state.get('role', 'Unknown')}")
+        st.markdown("#### 👤 User Panel")
         
-        # Show session status
+        # User info in a more compact format
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.caption("**User**")
+            st.write(st.session_state.username)
+        with col2:
+            st.caption("**Role**")
+            st.write(st.session_state.get('role', 'Unknown'))
+        
+        # Show session status more compactly
         if st.session_state.get('session_restored', False):
-            st.success("🔄 Session restored from URL")
+            st.success("🔄 Session restored", icon="✅")
         else:
-            st.info("🔒 Session active (persists across reloads)")
+            st.info("🔒 Session active", icon="ℹ️")
 
         if st.button("Logout", key="logout_btn", use_container_width=True):
             await self._handle_logout()
 
         # System prompt editor
         st.markdown("---")
-        st.subheader("System Prompt")
+        st.markdown("#### ⚙️ System Prompt")
 
         new_prompt = st.text_area(
             "Edit session system prompt:",
@@ -221,7 +259,7 @@ class AppController:
     async def _render_navigation(self) -> None:
         """Render page navigation."""
         st.markdown("---")
-        st.subheader("Navigation")
+        st.markdown("#### 🧭 Navigation")
 
         # Page selector
         page_names = list(self.pages.keys())
@@ -236,13 +274,14 @@ class AppController:
             options=page_names,
             index=current_index,
             key="page_selector",
+            label_visibility="collapsed"
         )
 
         if selected_page != st.session_state.current_page:
             st.session_state.current_page = selected_page
             st.rerun()
 
-        # Show page description
+        # Show page description more compactly
         current_page_obj = self.pages.get(st.session_state.current_page)
         if current_page_obj:
             st.caption(f"📄 {current_page_obj.get_page_title()}")
@@ -499,7 +538,7 @@ class AppController:
     async def _render_global_admin_panel(self) -> None:
         """Render global admin panel in sidebar for admin users."""
         st.markdown("---")
-        st.subheader("👑 Global Admin")
+        st.markdown("#### 👑 Admin Panel")
 
         # System Overview
         with st.expander("📊 System Overview", expanded=False):
