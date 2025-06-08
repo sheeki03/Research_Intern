@@ -923,10 +923,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             
             with tab5:
                 st.markdown("### 🤖 AI Model Selection")
-                with st.expander("ℹ️ How do I choose an AI model?", expanded=False):
-                    st.write("Choose which AI model to use for research and analysis. Different models have different capabilities and costs. Qwen 3 30B (free) provides good quality, while GPT-4 and Claude offer premium performance.")
-                
                 st.write("Choose the AI model for research and analysis")
+                
+                # Info box instead of nested expander
+                st.info("💡 **Model Guide:** Choose which AI model to use for research and analysis. Different models have different capabilities.")
                 
                 model_options = AI_MODEL_OPTIONS
                 
