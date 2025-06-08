@@ -513,11 +513,9 @@ class InteractiveResearchPage(BasePage):
     
     async def _render_url_input(self) -> None:
         """Render the URL input section."""
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.subheader("3. Provide Specific Web URLs (Optional)")
-        with col2:
-            st.info("ℹ️", help="Enter specific web pages you want to scrape for content. The AI will extract text from these pages and include it in your research report. Great for company websites, articles, or documentation.")
+        st.subheader("3. Provide Specific Web URLs (Optional)")
+        with st.expander("ℹ️ What does this do?", expanded=False):
+            st.write("Enter specific web pages you want to scrape for content. The AI will extract text from these pages and include it in your research report. Great for company websites, articles, or documentation.")
         
         urls_text_area = st.text_area(
             "Enter URLs, one per line:",
@@ -551,11 +549,9 @@ class InteractiveResearchPage(BasePage):
     
     async def _render_crawl_section(self) -> None:
         """Render the crawl and scrape section."""
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.subheader("4. Crawl & Scrape Site (Optional)")
-        with col2:
-            st.info("ℹ️", help="Automatically discover and scrape multiple pages from a website. Option A finds all pages via sitemap, Option B follows links from a starting page. Perfect for exploring company websites or documentation sites.")
+        st.subheader("4. Crawl & Scrape Site (Optional)")
+        with st.expander("ℹ️ What does this do?", expanded=False):
+            st.write("Automatically discover and scrape multiple pages from a website. Option A finds all pages via sitemap, Option B follows links from a starting page. Perfect for exploring company websites or documentation sites.")
         
         st.markdown("""
         **Option A: Scan Site Sitemap** - Get list of all pages
@@ -700,11 +696,9 @@ class InteractiveResearchPage(BasePage):
     
     async def _render_docsend_section(self) -> None:
         """Render the DocSend deck processing section."""
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.subheader("5. DocSend Presentation Decks (Optional)")
-        with col2:
-            st.info("ℹ️", help="Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides and extract their content for analysis.")
+        st.subheader("5. DocSend Presentation Decks (Optional)")
+        with st.expander("ℹ️ What does this do?", expanded=False):
+            st.write("Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides and extract their content for analysis.")
         
         st.write("Extract text from DocSend presentation slides using OCR")
         

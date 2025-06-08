@@ -182,11 +182,9 @@ class NotionAutomationPage(BasePage):
         await self._render_progress_tracking()
         
         # Main workflow - always show
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown("## 🎯 **Main Workflow**")
-        with col2:
-            st.info("ℹ️", help="Complete automated research workflow: 1) Select Notion DDQ pages 2) Add extra sources (docs, URLs) 3) Run AI research and scoring. Everything gets saved back to Notion automatically.")
+        st.markdown("## 🎯 **Main Workflow**")
+        with st.expander("ℹ️ What is the Main Workflow?", expanded=False):
+            st.write("Complete automated research workflow: 1) Select Notion DDQ pages 2) Add extra sources (docs, URLs) 3) Run AI research and scoring. Everything gets saved back to Notion automatically.")
         
         await self._render_page_selection_section()
         await self._render_additional_research_sources()
@@ -704,11 +702,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
     
     async def _render_additional_research_sources(self) -> None:
         """Render streamlined additional research sources section."""
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown("### 📚 **Step 3: Add Extra Sources** (Optional)")
-        with col2:
-            st.info("ℹ️", help="Add extra information sources beyond the Notion DDQ data. Upload documents, specify web URLs to scrape, crawl websites automatically, or process DocSend decks. All sources get combined with DDQ data for comprehensive AI analysis.")
+        st.markdown("### 📚 **Step 3: Add Extra Sources** (Optional)")
+        with st.expander("ℹ️ What are Extra Sources?", expanded=False):
+            st.write("Add extra information sources beyond the Notion DDQ data. Upload documents, specify web URLs to scrape, crawl websites automatically, or process DocSend decks. All sources get combined with DDQ data for comprehensive AI analysis.")
         
         st.write("Enhance research with documents, URLs, or website crawling")
         
@@ -735,11 +731,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["## 📄 Documents", "## 🌐 Web URLs", "## 🕷️ Site Crawling", "## 📊 DocSend Decks", "## 🤖 AI Model"])
             
             with tab1:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown("### 📄 Upload Additional Documents")
-                with col2:
-                    st.info("ℹ️", help="Upload PDF, Word, text or markdown files containing relevant information. Examples: whitepapers, pitch decks, technical documentation, financial reports. Text is extracted and combined with DDQ data for analysis.")
+                st.markdown("### 📄 Upload Additional Documents")
+                with st.expander("ℹ️ What types of documents can I upload?", expanded=False):
+                    st.write("Upload PDF, Word, text or markdown files containing relevant information. Examples: whitepapers, pitch decks, technical documentation, financial reports. Text is extracted and combined with DDQ data for analysis.")
                 
                 st.write("Add documents to supplement the DDQ analysis")
                 
@@ -763,11 +757,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     st.session_state.notion_uploaded_docs = []
             
             with tab2:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown("### 🌐 Provide Specific Web URLs")
-                with col2:
-                    st.info("ℹ️", help="Enter specific web page URLs (one per line) to scrape for content. Examples: company websites, blog posts, documentation pages, news articles. The AI will extract text content from these pages for analysis.")
+                st.markdown("### 🌐 Provide Specific Web URLs")
+                with st.expander("ℹ️ How does URL scraping work?", expanded=False):
+                    st.write("Enter specific web page URLs (one per line) to scrape for content. Examples: company websites, blog posts, documentation pages, news articles. The AI will extract text content from these pages for analysis.")
                 
                 st.write("Add relevant web pages for additional context")
                 
@@ -794,11 +786,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     st.session_state.notion_web_urls = []
             
             with tab3:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown("### 🕷️ Crawl & Scrape Websites")
-                with col2:
-                    st.info("ℹ️", help="Automatically discover and scrape multiple pages from websites. Option A scans the sitemap to find all pages, Option B crawls by following links. Great for exploring company websites, documentation sites, or blogs comprehensively.")
+                st.markdown("### 🕷️ Crawl & Scrape Websites")
+                with st.expander("ℹ️ What's the difference between crawling options?", expanded=False):
+                    st.write("Automatically discover and scrape multiple pages from websites. Option A scans the sitemap to find all pages, Option B crawls by following links. Great for exploring company websites, documentation sites, or blogs comprehensively.")
                 
                 st.write("Automatically discover and scrape content from websites")
                 
@@ -811,11 +801,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 st.session_state.notion_crawl_option = crawl_option
                 
                 if crawl_option == "Option A: Scan Site Sitemap":
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.markdown("**📋 Scan Site for URLs from Sitemap**")
-                    with col2:
-                        st.info("ℹ️", help="Finds all pages listed in the website's sitemap.xml file. This discovers the complete site structure including hidden or hard-to-find pages. More comprehensive than manual crawling.")
+                    st.markdown("**📋 Scan Site for URLs from Sitemap**")
+                    with st.expander("ℹ️ How does sitemap scanning work?", expanded=False):
+                        st.write("Finds all pages listed in the website's sitemap.xml file. This discovers the complete site structure including hidden or hard-to-find pages. More comprehensive than manual crawling.")
                     
                     st.write("Get a comprehensive list of all pages from the website's sitemap")
                     
@@ -854,11 +842,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.info(f"🗺️ Ready to scan sitemap: {sitemap_url}")
                 
                 elif crawl_option == "Option B: Crawl from URL":
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
-                    with col2:
-                        st.info("ℹ️", help="Starts from a specific page and follows links to discover related content. You control the maximum number of pages and how deep to go. Good for focused exploration of specific site sections.")
+                    st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
+                    with st.expander("ℹ️ How does URL crawling work?", expanded=False):
+                        st.write("Starts from a specific page and follows links to discover related content. You control the maximum number of pages and how deep to go. Good for focused exploration of specific site sections.")
                     
                     st.write("Follow links automatically to discover related content")
                     
@@ -879,11 +865,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.info(f"🔍 Will crawl from: {crawl_url} (max {max_pages} pages, depth {max_depth})")
             
             with tab4:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown("### 📊 DocSend Presentation Decks")
-                with col2:
-                    st.info("ℹ️", help="Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides. Perfect for pitch decks, investor presentations, or detailed project proposals.")
+                st.markdown("### 📊 DocSend Presentation Decks")
+                with st.expander("ℹ️ How does DocSend extraction work?", expanded=False):
+                    st.write("Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides. Perfect for pitch decks, investor presentations, or detailed project proposals.")
                 
                 st.write("Extract text from DocSend presentation slides using OCR")
                 
@@ -938,11 +922,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.warning("⚠️ Email is required for DocSend access")
             
             with tab5:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown("### 🤖 AI Model Selection")
-                with col2:
-                    st.info("ℹ️", help="Choose which AI model to use for research and analysis. Different models have different capabilities and costs. Qwen 3 30B (free) provides good quality, while GPT-4 and Claude offer premium performance.")
+                st.markdown("### 🤖 AI Model Selection")
+                with st.expander("ℹ️ How do I choose an AI model?", expanded=False):
+                    st.write("Choose which AI model to use for research and analysis. Different models have different capabilities and costs. Qwen 3 30B (free) provides good quality, while GPT-4 and Claude offer premium performance.")
                 
                 st.write("Choose the AI model for research and analysis")
                 
