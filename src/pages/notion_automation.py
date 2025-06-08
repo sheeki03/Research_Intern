@@ -44,7 +44,8 @@ from src.core.rag_utils import (
     DEFAULT_EMBEDDING_MODEL,
     TOP_K_RESULTS
 )
-from src.models.chat_models import ChatSession, ChatHistoryItem, ChatMessageInput, ChatMessageOutput
+from src.models.chat_models import ChatSession, ChatHistoryItem, ChatMessageInput, ChatMessageOutput, UserHistoryEntry
+from src.services.user_history_service import user_history_service
 
 # Cache configuration
 CACHE_DURATION_HOURS = 12
@@ -114,6 +115,9 @@ class NotionAutomationPage(BasePage):
         # Initialize clients
         self._init_clients()
         
+        # Render sidebar with history
+        self._render_sidebar_history()
+        
         # Show page content
         self.show_page_header("🔗 Notion CRM Integration", 
                              subtitle="Connect with your Notion database to automate research workflows")
@@ -178,7 +182,12 @@ class NotionAutomationPage(BasePage):
         await self._render_progress_tracking()
         
         # Main workflow - always show
-        st.markdown("## 🎯 **Main Workflow**")
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown("## 🎯 **Main Workflow**")
+        with col2:
+            st.info("ℹ️", help="Complete automated research workflow: 1) Select Notion DDQ pages 2) Add extra sources (docs, URLs) 3) Run AI research and scoring. Everything gets saved back to Notion automatically.")
+        
         await self._render_page_selection_section()
         await self._render_additional_research_sources()
         await self._render_manual_operations()
@@ -235,6 +244,128 @@ class NotionAutomationPage(BasePage):
         }
         self.init_session_state(required_keys)
     
+    def _render_sidebar_history(self) -> None:
+        """Render sidebar with user's chat history."""
+        username = st.session_state.get('username')
+        if not username:
+            return
+        
+        with st.sidebar:
+            st.markdown("## 📚 Your Recent Sessions")
+            
+            try:
+                # Get user's recent chat sessions
+                sessions = user_history_service.get_user_chat_sessions(username, 48)
+                
+                if not sessions:
+                    st.info("No recent sessions found")
+                    st.caption("Try generating a report and asking questions to create session history")
+                    return
+                
+                st.markdown(f"*Last 48 hours ({len(sessions)} sessions)*")
+                
+                for session in sessions:
+                    # Only show sessions from Notion Automation (filter by session_id pattern)
+                    if not session['session_id'].startswith('streamlit_notion_'):
+                        continue
+                        
+                    # Format timestamp
+                    if isinstance(session['last_activity'], str):
+                        last_activity = datetime.fromisoformat(session['last_activity'].replace('Z', '+00:00'))
+                    else:
+                        last_activity = session['last_activity']
+                    
+                    time_ago = self._format_time_ago(last_activity)
+                    
+                    # Create session preview
+                    session_title = f"Report: {session['report_id'][:15]}..."
+                    if len(session['report_id']) <= 15:
+                        session_title = f"Report: {session['report_id']}"
+                    
+                    # Session container
+                    with st.container():
+                        col1, col2 = st.columns([3, 1])
+                        
+                        with col1:
+                            if st.button(
+                                f"💬 {session_title}",
+                                key=f"notion_session_{session['session_id']}",
+                                help=f"Resume session from {time_ago}",
+                                use_container_width=True
+                            ):
+                                # Resume this session
+                                self._resume_session(session)
+                        
+                        with col2:
+                            st.markdown(f"<small>{time_ago}</small>", unsafe_allow_html=True)
+                        
+                        # Show session details
+                        st.markdown(
+                            f"<small>💬 {session['message_count']} messages</small>", 
+                            unsafe_allow_html=True
+                        )
+                        st.markdown("---")
+                
+                # Refresh button
+                if st.button("🔄 Refresh History", key="notion_refresh_history", use_container_width=True):
+                    st.rerun()
+                
+                # Clear old history button
+                if st.button("🧹 Clear Old History", key="notion_clear_old_history", use_container_width=True):
+                    cleaned_count = user_history_service.cleanup_old_entries(48)
+                    st.success(f"Cleaned {cleaned_count} old entries")
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Error loading history: {str(e)}")
+    
+    def _format_time_ago(self, timestamp: datetime) -> str:
+        """Format timestamp as 'time ago' string."""
+        now = datetime.utcnow()
+        if timestamp.tzinfo is not None:
+            # Convert to UTC if timezone-aware
+            timestamp = timestamp.replace(tzinfo=None)
+        
+        diff = now - timestamp
+        
+        if diff.days > 0:
+            return f"{diff.days}d ago"
+        elif diff.seconds > 3600:
+            hours = diff.seconds // 3600
+            return f"{hours}h ago"
+        elif diff.seconds > 60:
+            minutes = diff.seconds // 60
+            return f"{minutes}m ago"
+        else:
+            return "Just now"
+    
+    def _resume_session(self, session: Dict) -> None:
+        """Resume a previous chat session."""
+        try:
+            # Set the current report ID for chat
+            st.session_state.notion_current_report_id_for_chat = session['report_id']
+            st.session_state.notion_report_generated_for_chat = True
+            
+            # Expand chat interface
+            st.session_state.notion_chat_ui_expanded = True
+            
+            # Log session resume
+            user_history_service.add_activity(
+                UserHistoryEntry(
+                    username=session['username'],
+                    activity_type='session_resumed',
+                    session_id=session['session_id'],
+                    report_id=session['report_id'],
+                    details={'action': 'resumed_from_sidebar', 'page': 'notion_automation'}
+                )
+            )
+            
+            st.success(f"📂 Resumed session for {session['report_id']}")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error resuming session: {str(e)}")
+
     def _check_environment(self) -> bool:
         """Check if required environment variables are set."""
         import os
@@ -573,7 +704,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
     
     async def _render_additional_research_sources(self) -> None:
         """Render streamlined additional research sources section."""
-        st.markdown("### 📚 **Step 3: Add Extra Sources** (Optional)")
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown("### 📚 **Step 3: Add Extra Sources** (Optional)")
+        with col2:
+            st.info("ℹ️", help="Add extra information sources beyond the Notion DDQ data. Upload documents, specify web URLs to scrape, crawl websites automatically, or process DocSend decks. All sources get combined with DDQ data for comprehensive AI analysis.")
+        
         st.write("Enhance research with documents, URLs, or website crawling")
         
         # Initialize session state for additional sources
@@ -599,7 +735,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             tab1, tab2, tab3, tab4, tab5 = st.tabs(["## 📄 Documents", "## 🌐 Web URLs", "## 🕷️ Site Crawling", "## 📊 DocSend Decks", "## 🤖 AI Model"])
             
             with tab1:
-                st.markdown("### 📄 Upload Additional Documents")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown("### 📄 Upload Additional Documents")
+                with col2:
+                    st.info("ℹ️", help="Upload PDF, Word, text or markdown files containing relevant information. Examples: whitepapers, pitch decks, technical documentation, financial reports. Text is extracted and combined with DDQ data for analysis.")
+                
                 st.write("Add documents to supplement the DDQ analysis")
                 
                 uploaded_files = st.file_uploader(
@@ -622,7 +763,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     st.session_state.notion_uploaded_docs = []
             
             with tab2:
-                st.markdown("### 🌐 Provide Specific Web URLs")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown("### 🌐 Provide Specific Web URLs")
+                with col2:
+                    st.info("ℹ️", help="Enter specific web page URLs (one per line) to scrape for content. Examples: company websites, blog posts, documentation pages, news articles. The AI will extract text content from these pages for analysis.")
+                
                 st.write("Add relevant web pages for additional context")
                 
                 # URL input area
@@ -648,7 +794,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                     st.session_state.notion_web_urls = []
             
             with tab3:
-                st.markdown("### 🕷️ Crawl & Scrape Websites")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown("### 🕷️ Crawl & Scrape Websites")
+                with col2:
+                    st.info("ℹ️", help="Automatically discover and scrape multiple pages from websites. Option A scans the sitemap to find all pages, Option B crawls by following links. Great for exploring company websites, documentation sites, or blogs comprehensively.")
+                
                 st.write("Automatically discover and scrape content from websites")
                 
                 crawl_option = st.radio(
@@ -660,7 +811,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 st.session_state.notion_crawl_option = crawl_option
                 
                 if crawl_option == "Option A: Scan Site Sitemap":
-                    st.markdown("**📋 Scan Site for URLs from Sitemap**")
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.markdown("**📋 Scan Site for URLs from Sitemap**")
+                    with col2:
+                        st.info("ℹ️", help="Finds all pages listed in the website's sitemap.xml file. This discovers the complete site structure including hidden or hard-to-find pages. More comprehensive than manual crawling.")
+                    
                     st.write("Get a comprehensive list of all pages from the website's sitemap")
                     
                     sitemap_url = st.text_input(
@@ -698,7 +854,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.info(f"🗺️ Ready to scan sitemap: {sitemap_url}")
                 
                 elif crawl_option == "Option B: Crawl from URL":
-                    st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
+                    with col2:
+                        st.info("ℹ️", help="Starts from a specific page and follows links to discover related content. You control the maximum number of pages and how deep to go. Good for focused exploration of specific site sections.")
+                    
                     st.write("Follow links automatically to discover related content")
                     
                     crawl_url = st.text_input(
@@ -718,7 +879,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.info(f"🔍 Will crawl from: {crawl_url} (max {max_pages} pages, depth {max_depth})")
             
             with tab4:
-                st.markdown("### 📊 DocSend Presentation Decks")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown("### 📊 DocSend Presentation Decks")
+                with col2:
+                    st.info("ℹ️", help="Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides. Perfect for pitch decks, investor presentations, or detailed project proposals.")
+                
                 st.write("Extract text from DocSend presentation slides using OCR")
                 
                 docsend_url = st.text_input(
@@ -772,7 +938,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.warning("⚠️ Email is required for DocSend access")
             
             with tab5:
-                st.markdown("### 🤖 AI Model Selection")
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown("### 🤖 AI Model Selection")
+                with col2:
+                    st.info("ℹ️", help="Choose which AI model to use for research and analysis. Different models have different capabilities and costs. Qwen 3 30B (free) provides good quality, while GPT-4 and Claude offer premium performance.")
+                
                 st.write("Choose the AI model for research and analysis")
                 
                 model_options = AI_MODEL_OPTIONS
@@ -2644,6 +2815,22 @@ Include specific data points and quotes from the source material where relevant.
         """Process a chat question using RAG context or direct AI analysis."""
         try:
             with st.spinner("🤔 AI is thinking..."):
+                # Initialize chat sessions if not exists and log session creation
+                if 'notion_chat_sessions_store' not in st.session_state:
+                    st.session_state.notion_chat_sessions_store = {}
+                
+                if report_id not in st.session_state.notion_chat_sessions_store:
+                    st.session_state.notion_chat_sessions_store[report_id] = []
+                    
+                    # Log session creation for new chat sessions
+                    username = st.session_state.get('username', 'UNKNOWN')
+                    if username != 'UNKNOWN':
+                        try:
+                            session_id = f"streamlit_notion_{report_id}_{username}"
+                            user_history_service.log_session_created(username, session_id, report_id)
+                        except Exception as e:
+                            self.logger.warning(f"Error logging session creation: {e}")
+                
                 rag_context = st.session_state.get('notion_rag_contexts', {}).get(report_id)
                 client = st.session_state.get('notion_openrouter_client')
                 
@@ -2729,6 +2916,21 @@ Please provide a helpful response acknowledging that you don't have access to th
                     if 'notion_chat_sessions_store' not in st.session_state:
                         st.session_state.notion_chat_sessions_store = {}
                     st.session_state.notion_chat_sessions_store[report_id] = chat_history
+                    
+                    # Log to user history service
+                    username = st.session_state.get('username', 'UNKNOWN')
+                    if username != 'UNKNOWN':
+                        try:
+                            session_id = f"streamlit_notion_{report_id}_{username}"
+                            user_history_service.log_chat_message(
+                                username=username,
+                                session_id=session_id,
+                                report_id=report_id,
+                                query=question,
+                                response=response
+                            )
+                        except Exception as e:
+                            self.logger.warning(f"Error logging chat message: {e}")
                     
                     self.show_success(f"✅ Answer generated using {response_method}!")
                     st.rerun()
