@@ -732,10 +732,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             
             with tab1:
                 st.markdown("### 📄 Upload Additional Documents")
-                with st.expander("ℹ️ What types of documents can I upload?", expanded=False):
-                    st.write("Upload PDF, Word, text or markdown files containing relevant information. Examples: whitepapers, pitch decks, technical documentation, financial reports. Text is extracted and combined with DDQ data for analysis.")
-                
                 st.write("Add documents to supplement the DDQ analysis")
+                
+                # Info box instead of nested expander
+                st.info("💡 **File Types:** Upload PDF, Word, text or markdown files containing relevant information. Examples: whitepapers, pitch decks, technical documentation, financial reports. Text is extracted and combined with DDQ data for analysis.")
                 
                 uploaded_files = st.file_uploader(
                     "Choose files (PDF, DOCX, TXT, MD)",
@@ -758,10 +758,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             
             with tab2:
                 st.markdown("### 🌐 Provide Specific Web URLs")
-                with st.expander("ℹ️ How does URL scraping work?", expanded=False):
-                    st.write("Enter specific web page URLs (one per line) to scrape for content. Examples: company websites, blog posts, documentation pages, news articles. The AI will extract text content from these pages for analysis.")
-                
                 st.write("Add relevant web pages for additional context")
+                
+                # Info box instead of nested expander
+                st.info("💡 **URL Scraping:** Enter specific web page URLs (one per line) to scrape for content. Examples: company websites, blog posts, documentation pages, news articles. The AI will extract text content from these pages for analysis.")
                 
                 # URL input area
                 urls_text = st.text_area(
@@ -787,10 +787,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             
             with tab3:
                 st.markdown("### 🕷️ Crawl & Scrape Websites")
-                with st.expander("ℹ️ What's the difference between crawling options?", expanded=False):
-                    st.write("Automatically discover and scrape multiple pages from websites. Option A scans the sitemap to find all pages, Option B crawls by following links. Great for exploring company websites, documentation sites, or blogs comprehensively.")
-                
                 st.write("Automatically discover and scrape content from websites")
+                
+                # Info box instead of nested expander
+                st.info("💡 **Crawling Options:** Automatically discover and scrape multiple pages from websites. Option A scans the sitemap to find all pages, Option B crawls by following links. Great for exploring company websites, documentation sites, or blogs comprehensively.")
                 
                 crawl_option = st.radio(
                     "Choose crawling method:",
@@ -802,10 +802,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 
                 if crawl_option == "Option A: Scan Site Sitemap":
                     st.markdown("**📋 Scan Site for URLs from Sitemap**")
-                    with st.expander("ℹ️ How does sitemap scanning work?", expanded=False):
-                        st.write("Finds all pages listed in the website's sitemap.xml file. This discovers the complete site structure including hidden or hard-to-find pages. More comprehensive than manual crawling.")
-                    
                     st.write("Get a comprehensive list of all pages from the website's sitemap")
+                    
+                    # Info box instead of nested expander
+                    st.info("💡 **Sitemap Scanning:** Finds all pages listed in the website's sitemap.xml file. This discovers the complete site structure including hidden or hard-to-find pages. More comprehensive than manual crawling.")
                     
                     sitemap_url = st.text_input(
                         "URL to scan for sitemap:",
@@ -843,10 +843,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 
                 elif crawl_option == "Option B: Crawl from URL":
                     st.markdown("**🕷️ Crawl and Scrape Starting from URL**")
-                    with st.expander("ℹ️ How does URL crawling work?", expanded=False):
-                        st.write("Starts from a specific page and follows links to discover related content. You control the maximum number of pages and how deep to go. Good for focused exploration of specific site sections.")
-                    
                     st.write("Follow links automatically to discover related content")
+                    
+                    # Info box instead of nested expander
+                    st.info("💡 **URL Crawling:** Starts from a specific page and follows links to discover related content. You control the maximum number of pages and how deep to go. Good for focused exploration of specific site sections.")
                     
                     crawl_url = st.text_input(
                         "Starting URL:",
@@ -866,10 +866,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             
             with tab4:
                 st.markdown("### 📊 DocSend Presentation Decks")
-                with st.expander("ℹ️ How does DocSend extraction work?", expanded=False):
-                    st.write("Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides. Perfect for pitch decks, investor presentations, or detailed project proposals.")
-                
                 st.write("Extract text from DocSend presentation slides using OCR")
+                
+                # Info box instead of nested expander
+                st.info("💡 **DocSend Extraction:** Extract text from DocSend presentation slides using advanced OCR technology. Provide the DocSend URL and access credentials to automatically process all slides. Perfect for pitch decks, investor presentations, or detailed project proposals.")
                 
                 docsend_url = st.text_input(
                     "DocSend URL:",
