@@ -30,8 +30,19 @@ OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/ap
 # Set the default model for the application. This can be overridden by user selection in the UI.
 OPENROUTER_PRIMARY_MODEL = os.getenv("OPENROUTER_PRIMARY_MODEL", "qwen/qwen3-30b-a3b:free")
 
+# Nano-GPT Configuration
+NANOGPT_API_KEY = os.getenv("NANOGPT_API_KEY")
+if not NANOGPT_API_KEY:
+    print("Warning: NANOGPT_API_KEY is not set. Nano-GPT models will not work.")
+
+NANOGPT_BASE_URL = os.getenv("NANOGPT_BASE_URL", "https://nano-gpt.com/api/v1")
+
 # Standard AI Model Options for both Interactive Research and Notion Automation
 AI_MODEL_OPTIONS = {
+    # Nano-GPT Models
+    "nanogpt/dmind/dmind-1": "DMind-1",
+    "nanogpt/dmind/dmind-1-mini": "DMind-1 Mini", 
+    # OpenRouter Models
     "qwen/qwen3-30b-a3b:free": "Qwen3 30B",
     "qwen/qwen3-235b-a22b:free": "Qwen3 235B",
     "google/gemini-2.5-pro-preview": "Gemini 2.5 Pro",
@@ -39,7 +50,7 @@ AI_MODEL_OPTIONS = {
     "openai/gpt-4.1": "GPT-4.1",
     "openai/gpt-4o-mini": "GPT-4o Mini",
     "anthropic/claude-sonnet-4": "Claude Sonnet 4",
-    "tngtech/deepseek-r1t-chimera:free": "DeepSeek R1T Chimera"
+    "tngtech/deepseek-r1t-chimera:free": "DeepSeek R1T Chimera",
 }
 
 # Application Settings

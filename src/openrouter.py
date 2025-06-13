@@ -22,27 +22,70 @@ class ResearchResult(TypedDict):
 
 class OpenRouterClient:
     def __init__(self):
-        self.api_key = OPENROUTER_API_KEY
-        self.base_url = OPENROUTER_BASE_URL
+        # OpenRouter configuration
+        self.openrouter_api_key = OPENROUTER_API_KEY
+        self.openrouter_base_url = OPENROUTER_BASE_URL
         self.primary_model = OPENROUTER_PRIMARY_MODEL
+        
+        # Nano-GPT configuration (from environment)
+        self.nanogpt_api_key = os.getenv("NANOGPT_API_KEY")
+        self.nanogpt_base_url = os.getenv("NANOGPT_BASE_URL", "https://nano-gpt.com/api/v1")
+        
+        # Backward compatibility - keep old attribute names
+        self.api_key = self.openrouter_api_key
+        self.base_url = self.openrouter_base_url
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "HTTP-Referer": "https://github.com/your-repo",  # Replace with your actual repo
             "X-Title": "DDQ Research Pipeline",
             "Content-Type": "application/json"
         }
+    
+    def _get_provider_config(self, model: str) -> Dict[str, Any]:
+        """Get provider-specific configuration based on model name."""
+        if model.startswith("nanogpt/"):
+            # Nano-GPT provider
+            actual_model = model.replace("nanogpt/", "", 1)  # Remove prefix for API call
+            return {
+                "base_url": self.nanogpt_base_url,
+                "headers": {
+                    "Authorization": f"Bearer {self.nanogpt_api_key}",
+                    "Content-Type": "application/json"
+                },
+                "model": actual_model,
+                "provider": "nanogpt"
+            }
+        else:
+            # OpenRouter provider (default)
+            return {
+                "base_url": self.openrouter_base_url,
+                "headers": {
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "HTTP-Referer": "https://github.com/your-repo",
+                    "X-Title": "DDQ Research Pipeline",
+                    "Content-Type": "application/json"
+                },
+                "model": model,
+                "provider": "openrouter"
+            }
 
     async def _make_request(self, model: str, messages: list, temperature: float = 0.7) -> Optional[Dict[str, Any]]:
-        """Make an asynchronous request to the OpenRouter API using aiohttp."""
-        url = f"{self.base_url}/chat/completions"
+        """Make an asynchronous request to the appropriate API provider."""
+        provider_config = self._get_provider_config(model)
+        url = f"{provider_config['base_url']}/chat/completions"
         
         payload = {
-            "model": model,
+            "model": provider_config["model"],
             "messages": messages,
             "temperature": temperature
         }
         
-        request_timeout = ClientTimeout(total=300)
+        # Dynamic timeout based on model - dmind models need more time for thinking
+        if "dmind" in provider_config["model"].lower():
+            request_timeout = ClientTimeout(total=600)  # 10 minutes for dmind models
+            print(f"Using extended timeout (600s) for dmind model: {provider_config['model']}")
+        else:
+            request_timeout = ClientTimeout(total=300)  # 5 minutes for other models
 
         # Create SSL context with proper certificate verification
         try:
@@ -56,26 +99,35 @@ class OpenRouterClient:
             ssl_context.verify_mode = ssl.CERT_NONE
             connector = aiohttp.TCPConnector(ssl=ssl_context)
 
-        async with aiohttp.ClientSession(headers=self.headers, connector=connector) as session:
-            try:
-                async with session.post(url, json=payload, timeout=request_timeout) as response:
-                    response.raise_for_status()
-                    
-                    return await response.json()
-            except asyncio.TimeoutError:
-                 print(f"Request timed out while connecting or reading from OpenRouter API with {model}")
-                 return None
-            except aiohttp.ClientResponseError as e:
-                print(f"HTTP Error making request to OpenRouter API with {model}: Status {e.status}, Message: {e.message}, Headers: {e.headers}")
+        async with aiohttp.ClientSession(headers=provider_config["headers"], connector=connector) as session:
+            # Retry logic for 503 Service Unavailable errors
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
-                    error_body = await e.read()
-                    print(f"Error body: {error_body.decode()}")
-                except Exception as read_e:
-                    print(f"Could not read error body: {read_e}")
-                return None
-            except aiohttp.ClientError as e:
-                print(f"Client Error making request to OpenRouter API with {model}: {e}")
-                return None
+                    async with session.post(url, json=payload, timeout=request_timeout) as response:
+                        response.raise_for_status()
+                        
+                        return await response.json()
+                except asyncio.TimeoutError:
+                     print(f"Request timed out while connecting to {provider_config['provider']} API with {model}")
+                     return None
+                except aiohttp.ClientResponseError as e:
+                    if e.status == 503 and attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2  # 2, 4, 6 seconds
+                        print(f"503 Service Unavailable for {model}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    
+                    print(f"HTTP Error making request to {provider_config['provider']} API with {model}: Status {e.status}, Message: {e.message}")
+                    try:
+                        error_body = await e.read()
+                        print(f"Error body: {error_body.decode()}")
+                    except Exception as read_e:
+                        print(f"Could not read error body: {read_e}")
+                    return None
+                except aiohttp.ClientError as e:
+                    print(f"Client Error making request to {provider_config['provider']} API with {model}: {e}")
+                    return None
 
     async def generate_response(self,
                          prompt: str, 
@@ -94,11 +146,13 @@ class OpenRouterClient:
         
         if model_override:
             # Use the specified override model
-            print(f"Using provided model override: {model_override}")
+            provider_config = self._get_provider_config(model_override)
+            print(f"Using model override: {model_override} via {provider_config['provider']}")
             response_data = await self._make_request(model_override, messages, temperature)
         else:
             # Use primary model with fallback logic
-            print(f"Using primary model: {self.primary_model}")
+            provider_config = self._get_provider_config(self.primary_model)
+            print(f"Using primary model: {self.primary_model} via {provider_config['provider']}")
             response_data = await self._make_request(self.primary_model, messages, temperature)
         
         # Process the response (regardless of which model was used)

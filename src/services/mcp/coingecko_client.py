@@ -117,11 +117,11 @@ class CoinGeckoMCPClient:
                     self.available_tools = tools
                     logger.info(f"Discovered {len(tools)} MCP tools")
                     return True
-                else:
-                    # Process failed to start
-                    stderr_output = self.mcp_process.stderr.read() if self.mcp_process.stderr else ""
-                    logger.error(f"MCP process failed to start: {stderr_output}")
-                    return False
+            else:
+                # Process failed to start
+                stderr_output = self.mcp_process.stderr.read() if self.mcp_process.stderr else ""
+                logger.error(f"MCP process failed to start: {stderr_output}")
+                return False
             
             return False
             
