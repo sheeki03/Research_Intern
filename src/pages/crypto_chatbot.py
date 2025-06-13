@@ -127,7 +127,12 @@ class CryptoChatbotPage(BasePage):
     def _generate_response(self, user_input: str) -> Dict[str, Any]:
         """Generate AI response to user input using ChatController."""
         try:
-            return self.controller.process_message(user_input)
+            # Get response from new deterministic controller
+            mcp_response = self.controller.process_message(user_input)
+            
+            # Convert to legacy format for existing UI components
+            return self._convert_mcp_response_to_legacy(mcp_response, user_input)
+            
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             return {
@@ -135,6 +140,267 @@ class CryptoChatbotPage(BasePage):
                 "content": f"⚠️ I encountered an error processing your request: {str(e)}. Please try again.",
                 "timestamp": datetime.now()
             }
+    
+    def _convert_mcp_response_to_legacy(self, mcp_response: Dict[str, Any], user_input: str) -> Dict[str, Any]:
+        """Convert new MCP response format to legacy format for UI compatibility."""
+        try:
+            if not mcp_response.get("ok"):
+                # Handle errors
+                error = mcp_response.get("error", "Unknown error")
+                if error == "unsupported_query":
+                    hint = mcp_response.get("meta", {}).get("hint", "")
+                    content = f"❓ **Unsupported Query**\n\nI couldn't understand your request. {hint}\n\n"
+                    content += "**Try these examples:**\n"
+                    content += "• 'Bitcoin price'\n"
+                    content += "• 'trending coins'\n" 
+                    content += "• 'search dogecoin'\n"
+                    content += "• 'global market stats'\n"
+                    content += "• 'historical Bitcoin data'\n"
+                    content += "• 'coins above 5 billion FDV'"
+                else:
+                    content = f"⚠️ **Error:** {error}"
+                
+                return {
+                    "role": "assistant",
+                    "content": content,
+                    "timestamp": datetime.now()
+                }
+            
+            # Handle successful responses
+            tool = mcp_response.get("tool")
+            data = mcp_response.get("data", {})
+            meta = mcp_response.get("meta", {})
+            
+            if tool == "get_coin_price":
+                return self._format_coin_price_response(data, meta)
+            elif tool == "get_trending_coins":
+                return self._format_trending_response(data, meta)
+            elif tool == "search_coins":
+                return self._format_search_response(data, meta)
+            elif tool == "get_market_overview":
+                return self._format_market_overview_response(data, meta)
+            elif tool == "get_historical_data":
+                return self._format_historical_response(data, meta)
+            elif tool == "ask":
+                return self._format_ask_response(data, meta)
+            else:
+                return {
+                    "role": "assistant", 
+                    "content": f"✅ **Response from {tool}**\n\n{str(data)}",
+                    "timestamp": datetime.now()
+                }
+                
+        except Exception as e:
+            logger.error(f"Error converting MCP response: {e}")
+            return {
+                "role": "assistant",
+                "content": f"⚠️ Error processing response: {str(e)}",
+                "timestamp": datetime.now()
+            }
+    
+    def _format_coin_price_response(self, data: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Format coin price response for UI."""
+        name = data.get("name", "Unknown")
+        symbol = data.get("symbol", "").upper()
+        price = data.get("price", 0)
+        change_24h = data.get("change_24h", 0)
+        market_cap = data.get("market_cap", 0)
+        
+        change_emoji = "🟢" if change_24h >= 0 else "🔴"
+        content = f"💰 **{name} ({symbol})**\n\n"
+        content += f"**Current Price:** ${price:,.4f}\n"
+        content += f"**24h Change:** {change_emoji} {change_24h:+.2f}%\n"
+        if market_cap:
+            content += f"**Market Cap:** ${market_cap:,.0f}\n"
+        
+        latency = meta.get("latency_ms", 0)
+        content += f"\n*Response time: {latency}ms*"
+        
+        return {
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.now(),
+            "data": {
+                "type": "coin_info",
+                "coin": name,
+                "symbol": symbol,
+                "price": f"${price:,.4f}",
+                "change_24h": f"{change_24h:+.2f}%",
+                "market_cap": f"${market_cap:,.0f}" if market_cap else "N/A",
+                "volume": "N/A"
+            }
+        }
+    
+    def _format_trending_response(self, data: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Format trending coins response for UI."""
+        trending = data.get("trending", [])
+        limit = data.get("limit", 10)
+        
+        content = f"🔥 **Top {len(trending)} Trending Coins**\n\n"
+        
+        for i, coin in enumerate(trending, 1):
+            name = coin.get("name", "Unknown")
+            symbol = coin.get("symbol", "").upper()
+            rank = coin.get("market_cap_rank", "N/A")
+            change = coin.get("price_change_percentage_24h", 0)
+            
+            change_emoji = "🟢" if change >= 0 else "🔴"
+            content += f"**{i}. {name} ({symbol})**\n"
+            content += f"   • Rank: #{rank}\n"
+            content += f"   • 24h: {change_emoji} {change:+.2f}%\n\n"
+        
+        latency = meta.get("latency_ms", 0)
+        content += f"*Response time: {latency}ms*"
+        
+        return {
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.now(),
+            "data": {
+                "type": "trending_list",
+                "coins": [
+                    {
+                        "name": coin.get("name", "Unknown"),
+                        "symbol": coin.get("symbol", "").upper(),
+                        "rank": coin.get("market_cap_rank", "N/A"),
+                        "change": f"{coin.get('price_change_percentage_24h', 0):+.2f}%"
+                    }
+                    for coin in trending
+                ]
+            }
+        }
+    
+    def _format_search_response(self, data: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Format search results response for UI."""
+        query = data.get("query", "")
+        results = data.get("results", [])
+        total = data.get("total_found", 0)
+        
+        content = f"🔍 **Search Results for '{query}'** ({total} found)\n\n"
+        
+        for i, coin in enumerate(results[:10], 1):  # Show top 10
+            name = coin.get("name", "Unknown")
+            symbol = coin.get("symbol", "").upper()
+            rank = coin.get("market_cap_rank", "N/A")
+            
+            content += f"**{i}. {name} ({symbol})**\n"
+            content += f"   • Market Cap Rank: #{rank}\n\n"
+        
+        latency = meta.get("latency_ms", 0)
+        content += f"*Response time: {latency}ms*"
+        
+        return {
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.now()
+        }
+    
+    def _format_market_overview_response(self, data: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Format market overview response for UI."""
+        market_cap = data.get("total_market_cap_usd", 0)
+        volume = data.get("total_volume_usd", 0)
+        btc_dom = data.get("btc_dominance", 0)
+        change_24h = data.get("market_cap_change_24h", 0)
+        active_cryptos = data.get("active_cryptocurrencies", 0)
+        
+        content = f"📊 **Global Cryptocurrency Market**\n\n"
+        content += f"💰 **Total Market Cap:** ${market_cap:,.0f}\n"
+        content += f"📈 **24h Volume:** ${volume:,.0f}\n"
+        content += f"🟠 **Bitcoin Dominance:** {btc_dom:.1f}%\n"
+        
+        if change_24h:
+            change_emoji = "📈" if change_24h >= 0 else "📉"
+            content += f"{change_emoji} **24h Change:** {change_24h:+.2f}%\n"
+        
+        content += f"🪙 **Active Cryptocurrencies:** {active_cryptos:,}\n"
+        
+        latency = meta.get("latency_ms", 0)
+        content += f"\n*Response time: {latency}ms*"
+        
+        return {
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.now(),
+            "data": {
+                "type": "market_overview",
+                "total_market_cap": f"${market_cap:,.0f}",
+                "total_volume": f"${volume:,.0f}",
+                "btc_dominance": f"{btc_dom:.1f}%",
+                "eth_dominance": "N/A",  # Legacy compatibility
+                "active_cryptos": f"{active_cryptos:,}",
+                "market_sentiment": "Neutral"  # Legacy compatibility
+            }
+        }
+    
+    def _format_historical_response(self, data: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Format historical data response for UI."""
+        coin_id = data.get("coin_id", "")
+        days = data.get("days", 0)
+        prices = data.get("prices", [])
+        total_points = data.get("total_points", 0)
+        
+        if not prices:
+            content = f"📈 **No historical data found for {coin_id}**"
+        else:
+            first_price = prices[0].get("price", 0)
+            last_price = prices[-1].get("price", 0) if len(prices) > 1 else first_price
+            
+            if first_price > 0:
+                change_pct = ((last_price - first_price) / first_price) * 100
+            else:
+                change_pct = 0
+            
+            content = f"📈 **{coin_id.title()} Historical Data ({days} days)**\n\n"
+            content += f"**Starting Price:** ${first_price:,.4f}\n"
+            content += f"**Latest Price:** ${last_price:,.4f}\n"
+            content += f"**Period Change:** {change_pct:+.2f}%\n"
+            content += f"**Data Points:** {total_points:,}\n"
+        
+        latency = meta.get("latency_ms", 0)
+        content += f"\n*Response time: {latency}ms*"
+        
+        return {
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.now(),
+            "data": {
+                "type": "historical_data",
+                "coin_id": coin_id,
+                "days": days,
+                "data": data  # Pass through for potential chart rendering
+            }
+        }
+    
+    def _format_ask_response(self, data: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Format MCP ask tool response for UI."""
+        question = data.get("question", "")
+        answer = data.get("answer", "")
+        source = data.get("source", "mcp")
+        
+        # Ensure clean UTF-8 encoding and normalize text
+        if isinstance(answer, str):
+            # Normalize unicode characters that might cause display issues
+            answer = answer.encode('utf-8', errors='replace').decode('utf-8')
+            # Replace problematic unicode characters
+            answer = answer.replace('\u2212', '-')  # Minus sign to hyphen
+            answer = answer.replace('\u2022', '•')  # Bullet point normalization
+        
+        content = f"🤖 **AI Response**\n\n{answer}\n\n"
+        content += f"*Source: {source}*"
+        
+        latency = meta.get("latency_ms", 0)
+        content += f" | *Response time: {latency}ms*"
+        
+        return {
+            "role": "assistant",
+            "content": content,
+            "timestamp": datetime.now(),
+            "data": {
+                "type": "natural_language_response",
+                "source": source,
+                "original_question": question
+            }
+        }
     
     def _render_message_data(self, data: Dict[str, Any]):
         """Render structured data from chat messages."""

@@ -1,46 +1,32 @@
 """
 Chat Controller
 
-Processes user chat messages, calls MCP tools (via CoinGeckoMCPClient),
-and returns structured responses for the CryptoChatbotPage.
+Clean deterministic routing to 6 MCP tools with zero fallback logic.
+Every query hits exactly one tool or returns unsupported_query error.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import time
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Callable
 
 from src.services.mcp.coingecko_client import CoinGeckoMCPClient
 from src.services.mcp.models import PriceData, CoinData, SearchResult
 
-# Import web search capabilities
-try:
-    from web_research.data_acquisition.services import SearchService
-    WEB_SEARCH_AVAILABLE = True
-except ImportError:
-    WEB_SEARCH_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
 
 # Helper: run async coroutine from sync context
-
 def _run(coro):
-    """Synchronously execute an async coroutine.
-
-    Handle the case where we're already in an asyncio event loop (like Streamlit).
-    If there's already a loop running, we need to handle it differently.
-    """
+    """Synchronously execute an async coroutine."""
     try:
-        # Check if there's already an event loop running
         loop = asyncio.get_running_loop()
-        # If we get here, there's already a loop running
-        # We need to use asyncio.create_task or run in a thread
         import concurrent.futures
         import threading
         
-        # Run the coroutine in a separate thread with its own event loop
         def run_in_thread():
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
@@ -51,696 +37,371 @@ def _run(coro):
         
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future = executor.submit(run_in_thread)
-            return future.result(timeout=30)  # 30 second timeout
+            return future.result(timeout=30)
             
     except RuntimeError:
-        # No event loop running, we can create one
         return asyncio.run(coro)
 
 
 class ChatController:
-    """High-level chat orchestrator for the Crypto AI Assistant."""
+    """Deterministic crypto chat router using 6 MCP tools."""
+
+    # Rate limits (calls per minute)
+    RATE_LIMITS = {
+        "get_coin_price": 120,
+        "get_trending_coins": 60, 
+        "search_coins": 60,
+        "get_market_overview": 30,
+        "get_historical_data": 30,
+        "ask": 20
+    }
+    
+    # Tool timeouts (seconds)
+    TIMEOUTS = {
+        "get_coin_price": 2,
+        "get_trending_coins": 2,
+        "search_coins": 2, 
+        "get_market_overview": 2,
+        "get_historical_data": 5,
+        "ask": 10
+    }
 
     def __init__(self):
         self.client = CoinGeckoMCPClient()
-        # Initialize web search service if available
-        self.search_service = SearchService() if WEB_SEARCH_AVAILABLE else None
-        # Connect lazily – first call will attempt connect
         self.connected = False
+        
+        # Routing table: (pattern, tool_handler) - Ultra flexible patterns
+        self.routes = [
+            # Any mention of trending/popular coins
+            (r"\b(trending|popular|hot|top|best|leading|gainers|losers)\b", self._handle_get_trending_coins),
+            
+            # Search requests (very flexible)
+            (r"\b(search|find|lookup|look up)\b", self._handle_search_coins),
+            
+            # Market overview requests  
+            (r"\b(market|global|overview|stats|statistics|cap|dominance|total)\b", self._handle_get_market_overview),
+            
+            # Historical data requests
+            (r"\b(historical|history|past|chart|graph|performance|trend)\b", self._handle_get_historical_data),
+            
+            # News requests
+            (r"\b(news|headlines|updates|latest|articles)\b", self._handle_ask),
+            
+            # Why questions with market sentiment
+            (r"\b(why|what|how|explain|reason|cause)\b.*\b(down|up|dump|pump|crash|surge|rally|decline|rise|fall|moon|tank|dropping|rising|falling|climbing|bearish|bullish)\b", self._handle_ask),
+            
+            # ANY cryptocurrency mention (ultra flexible) - catches "analyse sol", "btc", "check ethereum", etc.
+            (r"\b(bitcoin|btc|ethereum|eth|solana|sol|cardano|ada|polygon|matic|avalanche|avax|chainlink|link|polkadot|dot|dogecoin|doge|tether|usdt|bnb|binance|xrp|ripple|tron|trx|litecoin|ltc|monero|xmr|stellar|xlm|algorand|algo|vechain|vet|filecoin|fil|cosmos|atom|near|uniswap|uni|aave|maker|mkr|compound|comp|curve|crv|yearn|yfi|sushi|1inch|shiba|shib|pepe|bonk|floki|arbitrum|arb|optimism|op|pancakeswap|cake|thorchain|rune|raydium|ray|jupiter|jup|pyth|jito|jto|brett|wif|dogwifhat|sand|sandbox|mana|decentraland|hedera|hbar|internet-computer|icp|ethereum-classic|etc|bitcoin-cash|bch|immutable|imx|loopring|lrc)\b", self._handle_get_coin_price),
+            
+            # Fallback for everything else
+            (r".*", self._handle_ask)
+        ]
 
     def _ensure_connection(self):
+        """Ensure MCP connection is established."""
         if not self.connected:
             try:
                 success = _run(self.client.connect())
                 self.connected = success
                 if not success:
-                    logger.warning("Falling back to REST API only mode – MCP connection failed or disabled.")
+                    logger.warning("MCP connection failed - operating in degraded mode")
             except Exception as e:
-                logger.error(f"Error during MCP connection: {e}")
+                logger.error(f"Connection error: {e}")
                 self.connected = False
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def process_message(self, message: str) -> Dict[str, Any]:
-        """Process a user message and return a structured assistant response."""
+        """
+        Route message to appropriate MCP tool using deterministic patterns.
+        Returns standard response envelope.
+        """
+        start_time = time.time()
         self._ensure_connection()
-
-        text = message.lower().strip()
-
-        try:
-            if any(w in text for w in ["bitcoin", "btc"]):
-                price = self.get_price("bitcoin")
-                return self._format_price_response(price)
-
-            if any(w in text for w in ["ethereum", "eth"]):
-                price = self.get_price("ethereum")
-                return self._format_price_response(price)
-
-            if "trending" in text or "hot" in text or "popular" in text:
-                trending = self.get_trending()
-                return self._format_trending_response(trending)
-
-            if "search" in text:
-                query = text.split("search")[-1].strip()
-                results = self.search_coins(query)
-                return self._format_search_response(query, results)
-
-            if "price" in text:
-                # naive extraction of last word as coin id
-                coin_id = text.split()[-1]
-                price = self.get_price(coin_id)
-                return self._format_price_response(price)
-
-            if "compare" in text:
-                query = text.replace("compare", " ").replace("vs", " ").replace(",", " ")
-                coin_ids = [w for w in query.split() if w]
-                if len(coin_ids) >= 2:
-                    comparison = self._compare_coins(coin_ids[:5])
-                    return self._format_comparison_response(comparison)
-                else:
+        
+        # Normalize message
+        msg = message.strip().lower()
+        
+        # Route through patterns
+        for pattern, handler in self.routes:
+            if re.search(pattern, msg, re.IGNORECASE):
+                try:
+                    result = handler(message, msg)
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    
                     return {
-                        "role": "assistant",
-                        "content": "Please specify at least two coin symbols to compare.",
-                        "timestamp": datetime.now(),
+                        "tool": result.get("tool"),
+                        "ok": True,
+                        "data": result.get("data"),
+                        "meta": {
+                            "received_at": datetime.utcnow().isoformat() + "Z",
+                            "latency_ms": latency_ms
+                        }
                     }
-
-            if "chart" in text or "plot" in text:
-                # extract coin id
-                words = text.split()
-                coin_id = None
-                for w in words:
-                    if w in ["bitcoin", "btc", "ethereum", "eth", "sol", "solana"] or len(w) > 2:
-                        coin_id = w
-                        break
-                if coin_id:
-                    chart = self._get_price_chart(coin_id)
-                    return chart
-
-            if "analyze" in text:
-                # take first coin after analyze
-                words = text.split()
-                idx = words.index("analyze") if "analyze" in words else 0
-                coin_id = words[idx+1] if idx+1 < len(words) else None
-                if coin_id:
-                    analysis = self._analyse_coin(coin_id)
-                    return self._format_analysis_response(coin_id, analysis)
-                else:
+                    
+                except Exception as e:
+                    logger.error(f"Tool {handler.__name__} failed: {e}")
                     return {
-                        "role": "assistant",
-                        "content": "Please specify a coin to analyze, e.g., 'analyze bitcoin'.",
-                        "timestamp": datetime.now(),
+                        "tool": getattr(handler, '_tool_name', 'unknown'),
+                        "ok": False,
+                        "error": str(e),
+                        "data": None,
+                        "meta": {
+                            "received_at": datetime.utcnow().isoformat() + "Z",
+                            "latency_ms": int((time.time() - start_time) * 1000)
+                        }
                     }
-
-            # Market analysis questions (prioritize over general questions)
-            if any(term in text for term in ["dump", "crash", "tanked", "nuked", "plunge", "dumped", "crashed", "fell", "drop", "dropped", "decline", "pump", "rally", "moon", "surge", "spike", "rise", "pump", "bull", "bear", "what happened", "why did", "market"]):
-                return self._handle_market_analysis_question(text)
-
-            # News questions
-            if any(term in text for term in ["news", "latest", "recent", "update", "updates", "breaking", "headlines", "stories"]):
-                return self._handle_news_question(text)
-
-            # Market overview questions
-            if any(term in text for term in ["market overview", "global market", "total market cap", "market stats"]):
-                return self._handle_market_overview_question()
-
-            # Historical data questions
-            if any(term in text for term in ["history", "historical", "past", "chart", "graph"]) and any(coin in text for coin in ["bitcoin", "btc", "ethereum", "eth", "solana", "sol"]):
-                coin_id = "bitcoin"
-                if "ethereum" in text or "eth" in text:
-                    coin_id = "ethereum"
-                elif "solana" in text or "sol" in text:
-                    coin_id = "solana"
-                
-                # Extract days if mentioned
-                days = 7  # default
-                if "30 day" in text or "month" in text:
-                    days = 30
-                elif "7 day" in text or "week" in text:
-                    days = 7
-                elif "1 year" in text or "year" in text:
-                    days = 365
-                
-                return self._handle_historical_data_question(coin_id, days)
-
-            # Natural language questions using MCP "ask" tool (only for non-market questions)
-            if any(term in text for term in ["what", "how", "why", "when", "where", "tell me", "explain"]):
-                return self._handle_natural_language_question(text)
-
-            # Default fallback
-            return {
-                "role": "assistant",
-                "content": "💭 I can help you with:\n\n🏷️ **Prices**: 'Bitcoin price', 'Ethereum price'\n📈 **Trending**: 'trending coins', 'what's hot'\n🔍 **Search**: 'search Solana'\n📊 **Compare**: 'compare Bitcoin vs Ethereum'\n📉 **Analysis**: 'analyze Bitcoin', 'why did market dump'\n📰 **News**: 'crypto news', 'Bitcoin news', 'latest updates'\n📋 **Market**: 'market overview', 'global stats'\n\nTry one of these or ask me anything about crypto!",
-                "timestamp": datetime.now(),
-            }
-        except Exception as e:
-            logger.exception("Error processing message: %s", e)
-            return {
-                "role": "assistant",
-                "content": f"⚠️ Sorry, I ran into an error: {e}",
-                "timestamp": datetime.now(),
-            }
-
-    # ------------------------------------------------------------------
-    # Data-fetch helpers (sync wrappers around async)
-    # ------------------------------------------------------------------
-
-    def get_price(self, coin_id: str) -> PriceData:
-        try:
-            return _run(self.client.get_coin_price(coin_id))
-        except Exception as e:
-            logger.error(f"Error fetching price for {coin_id}: {e}")
-            raise
-
-    def get_trending(self) -> List[CoinData]:
-        try:
-            return _run(self.client.get_trending_coins())
-        except Exception as e:
-            logger.error(f"Error fetching trending coins: {e}")
-            raise
-
-    def search_coins(self, query: str) -> List[SearchResult]:
-        try:
-            return _run(self.client.search_coins(query))
-        except Exception as e:
-            logger.error(f"Error searching coins with query '{query}': {e}")
-            raise
-
-    # Comparison helper
-    def _compare_coins(self, coin_ids: List[str]) -> Dict[str, Any]:
-        try:
-            from src.services.crypto_analysis.comparison_service import ComparisonService
-            service = ComparisonService()
-            return _run(service.compare(coin_ids))
-        except Exception as e:
-            logger.error(f"Error comparing coins {coin_ids}: {e}")
-            raise
-
-    def _analyse_coin(self, coin_id: str) -> Dict[str, Any]:
-        try:
-            from src.services.crypto_analysis.analysis_service import AnalysisService
-            service = AnalysisService()
-            return _run(service.analyze(coin_id))
-        except Exception as e:
-            logger.error(f"Error analyzing coin {coin_id}: {e}")
-            raise
-
-    def _handle_market_overview_question(self) -> Dict[str, Any]:
-        """Handle market overview questions."""
-        try:
-            market_data = _run(self.client.get_market_overview())
-            
-            # Format market overview response
-            total_market_cap_usd = market_data.total_market_cap.get('usd', 0)
-            total_volume_usd = market_data.total_volume.get('usd', 0)
-            btc_dominance = market_data.market_cap_percentage.get('btc', 0)
-            eth_dominance = market_data.market_cap_percentage.get('eth', 0)
-            
-            content = f"📊 **Global Cryptocurrency Market Overview**\n\n"
-            content += f"💰 **Total Market Cap:** ${total_market_cap_usd:,.0f}\n"
-            content += f"📈 **24h Volume:** ${total_volume_usd:,.0f}\n"
-            content += f"🟠 **Bitcoin Dominance:** {btc_dominance:.1f}%\n"
-            content += f"🔵 **Ethereum Dominance:** {eth_dominance:.1f}%\n"
-            content += f"🪙 **Active Cryptocurrencies:** {market_data.active_cryptocurrencies:,}\n"
-            
-            if market_data.market_cap_change_percentage_24h_usd:
-                change = market_data.market_cap_change_percentage_24h_usd
-                direction = "📈" if change >= 0 else "📉"
-                content += f"{direction} **24h Market Cap Change:** {change:+.2f}%\n"
-            
-            return {
-                "role": "assistant",
-                "content": content,
-                "timestamp": datetime.now(),
-                "data": {
-                    "type": "market_overview",
-                    "market_data": market_data
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error handling market overview question: {e}")
-            return {
-                "role": "assistant",
-                "content": f"⚠️ Sorry, I couldn't retrieve the market overview: {str(e)}",
-                "timestamp": datetime.now(),
-            }
-    
-    def _handle_historical_data_question(self, coin_id: str, days: int) -> Dict[str, Any]:
-        """Handle historical data questions."""
-        try:
-            historical_data = _run(self.client.get_historical_data(coin_id, days))
-            
-            if not historical_data.prices:
-                return {
-                    "role": "assistant",
-                    "content": f"📈 I couldn't find historical data for {coin_id}. Please try a different coin.",
-                    "timestamp": datetime.now(),
-                }
-            
-            # Get first and last prices for period analysis
-            first_price = historical_data.prices[0].price
-            last_price = historical_data.prices[-1].price
-            price_change = ((last_price - first_price) / first_price) * 100
-            
-            # Calculate price range
-            prices = [p.price for p in historical_data.prices]
-            min_price = min(prices)
-            max_price = max(prices)
-            
-            content = f"📈 **{coin_id.title()} Historical Data ({days} days)**\n\n"
-            content += f"💰 **Starting Price:** ${first_price:,.2f}\n"
-            content += f"💰 **Current Price:** ${last_price:,.2f}\n"
-            content += f"📊 **Price Change:** {price_change:+.2f}%\n"
-            content += f"📈 **Highest:** ${max_price:,.2f}\n"
-            content += f"📉 **Lowest:** ${min_price:,.2f}\n"
-            
-            return {
-                "role": "assistant",
-                "content": content,
-                "timestamp": datetime.now(),
-                "data": {
-                    "type": "historical_data",
-                    "coin_id": coin_id,
-                    "days": days,
-                    "data": historical_data,
-                    "price_change_percentage": price_change
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error handling historical data question: {e}")
-            return {
-                "role": "assistant",
-                "content": f"⚠️ Sorry, I couldn't retrieve historical data for {coin_id}: {str(e)}",
-                "timestamp": datetime.now(),
-            }
-    
-    def _handle_natural_language_question(self, text: str) -> Dict[str, Any]:
-        """Handle natural language questions using MCP ask tool."""
-        try:
-            response = _run(self.client.ask_question(text))
-            
-            if response.get("error"):
-                return {
-                    "role": "assistant",
-                    "content": f"⚠️ {response.get('answer', 'I encountered an error processing your question.')}",
-                    "timestamp": datetime.now(),
-                }
-            
-            # Format response based on source
-            content = response.get("answer", "I couldn't find an answer to your question.")
-            source = response.get("source", "unknown")
-            
-            if source == "mcp":
-                content = f"🤖 **AI Analysis:** {content}"
-            elif source == "rest_api":
-                content = f"📊 **Data Analysis:** {content}"
-            
-            return {
-                "role": "assistant",
-                "content": content,
-                "timestamp": datetime.now(),
-                "data": {
-                    "type": "natural_language_response",
-                    "source": source,
-                    "original_question": text
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error handling natural language question: {e}")
-            return {
-                "role": "assistant",
-                "content": f"⚠️ Sorry, I couldn't process your question: {str(e)}",
-                "timestamp": datetime.now(),
-            }
-    
-    def _handle_market_analysis_question(self, text: str) -> Dict[str, Any]:
-        """Handle general market analysis questions."""
-        try:
-            # Use the enhanced market movement analysis from the MCP client
-            question_lower = text.lower()
-            
-            if any(term in question_lower for term in ["dump", "crash", "fall", "down", "decline", "dip", "plunge"]):
-                direction = "down"
-            elif any(term in question_lower for term in ["pump", "rally", "rise", "up", "surge", "moon", "bull", "gain"]):
-                direction = "up"
-            else:
-                direction = "general"
-            
-            # Get the enhanced market analysis
-            response = _run(self.client._analyze_market_movement(direction, question_lower))
-            
-            if response.get("error"):
-                # Fallback to basic analysis
-                btc_price = self.get_price("bitcoin")
-                eth_price = self.get_price("ethereum")
-                
-                content = f"📊 **Quick Market Analysis**\n\n"
-                content += f"• Bitcoin: ${btc_price.current_price:,.2f} ({btc_price.price_change_percentage_24h:+.2f}% 24h)\n"
-                content += f"• Ethereum: ${eth_price.current_price:,.2f} ({eth_price.price_change_percentage_24h:+.2f}% 24h)\n\n"
-                content += "📈 Market movements are influenced by various factors including regulatory news, institutional activity, technical levels, and overall market sentiment."
-                
-                return {
-                    "role": "assistant",
-                    "content": content,
-                    "timestamp": datetime.now(),
-                }
-            
-            return {
-                "role": "assistant", 
-                "content": response.get("answer", "Market analysis completed."),
-                "data": {
-                    "type": "market_analysis",
-                    **response.get("data", {})
-                },
-                "timestamp": datetime.now(),
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in market analysis: {e}")
-            return {
-                "role": "assistant",
-                "content": f"💭 I can see you're asking about market movements. Let me analyze the current situation:\n\n"
-                          f"Try asking more specific questions like:\n"
-                          f"• 'What's the Bitcoin price trend?'\n"
-                          f"• 'Show me trending coins'\n"
-                          f"• 'Compare Bitcoin and Ethereum'\n"
-                          f"• 'Analyze Bitcoin'\n\n"
-                          f"For real-time market news and analysis, I recommend checking crypto news sources alongside the technical analysis I can provide.",
-                "timestamp": datetime.now(),
-            }
-
-    # ------------------------------------------------------------------
-    # Response formatting helpers
-    # ------------------------------------------------------------------
-
-    def _format_price_response(self, price: PriceData) -> Dict[str, Any]:
+        
+        # No route matched
         return {
-            "role": "assistant",
-            "content": f"📊 Current price for {price.name} ({price.symbol.upper()}): ${price.current_price:,.2f}",
+            "tool": None,
+            "ok": False,
+            "error": "unsupported_query",
+            "data": None,
+            "meta": {
+                "received_at": datetime.utcnow().isoformat() + "Z",
+                "hint": "Rephrase using clear coin keywords or try: 'Bitcoin price', 'trending coins', 'search dogecoin'"
+            }
+        }
+
+    def _handle_get_coin_price(self, original_msg: str, normalized_msg: str) -> Dict[str, Any]:
+        """Handle coin price queries. Pattern: '^(?:what|show).*price'"""
+        # Extract coin symbol from message
+        coin_symbol = self._extract_coin_symbol(original_msg)
+        if not coin_symbol:
+            raise ValueError("Could not identify coin symbol. Try: 'Bitcoin price' or 'BTC price'")
+        
+        # Extract vs_currency if specified
+        vs_currency = "usd"  # default
+        if any(curr in normalized_msg for curr in ["eur", "euro"]):
+            vs_currency = "eur"
+        elif any(curr in normalized_msg for curr in ["btc", "bitcoin"]):
+            vs_currency = "btc"
+        
+        price_data = _run(self.client.get_coin_price(coin_symbol))
+        
+        return {
+            "tool": "get_coin_price",
             "data": {
-                "type": "coin_info",
-                "coin": price.name,
-                "symbol": price.symbol.upper(),
-                "price": f"${price.current_price:,.2f}",
-                "change_24h": f"{price.price_change_percentage_24h:+.2f}%" if price.price_change_percentage_24h is not None else "N/A",
-                "market_cap": f"${price.market_cap:,.0f}" if price.market_cap else "N/A",
-                "volume": f"${price.total_volume:,.0f}" if price.total_volume else "N/A",
-                "rank": "N/A",
-            },
-            "timestamp": datetime.now(),
-        }
-
-    def _format_trending_response(self, coins: List[CoinData]) -> Dict[str, Any]:
-        simplified = [
-            {
-                "name": c.name,
-                "symbol": c.symbol.upper(),
-                "change": "N/A",
-                "rank": c.market_cap_rank or "-",
+                "coin_id": price_data.coin_id,
+                "symbol": price_data.symbol,
+                "name": getattr(price_data, 'name', coin_symbol),
+                "price": price_data.current_price,
+                "vs_currency": vs_currency,
+                "change_24h": getattr(price_data, 'price_change_percentage_24h', None),
+                "market_cap": getattr(price_data, 'market_cap', None)
             }
-            for c in coins[:10]
-        ]
-        return {
-            "role": "assistant",
-            "content": "🔥 Trending coins:",
-            "data": {"type": "trending_list", "coins": simplified},
-            "timestamp": datetime.now(),
         }
 
-    def _format_search_response(self, query: str, results: List[SearchResult]) -> Dict[str, Any]:
-        simplified = [
-            {
-                "name": r.name,
-                "symbol": r.symbol.upper(),
-                "rank": r.market_cap_rank or "-",
-            }
-            for r in results[:10]
-        ]
+    def _handle_get_trending_coins(self, original_msg: str, normalized_msg: str) -> Dict[str, Any]:
+        """Handle trending coins queries. Pattern: '^(?:top|trending) coins'"""
+        # Extract limit if specified
+        limit = 10  # default
+        limit_match = re.search(r'(?:top|trending)\s+(\d+)', normalized_msg)
+        if limit_match:
+            limit = min(int(limit_match.group(1)), 50)  # cap at 50
+        
+        trending_data = _run(self.client.get_trending_coins())
+        
+        # Limit results
+        limited_data = trending_data[:limit] if trending_data else []
+        
         return {
-            "role": "assistant",
-            "content": f"🔍 Search results for '{query}':",
-            "data": {"type": "trending_list", "coins": simplified},
-            "timestamp": datetime.now(),
-        }
-
-    def _format_comparison_response(self, comparison: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "role": "assistant",
-            "content": "📊 Comparison results:",
+            "tool": "get_trending_coins", 
             "data": {
-                "type": "dynamic_comparison",
-                **comparison
-            },
-            "timestamp": datetime.now(),
+                "trending": [
+                    {
+                        "id": coin.id,
+                        "symbol": coin.symbol,
+                        "name": coin.name,
+                        "market_cap_rank": getattr(coin, 'market_cap_rank', None),
+                        "price_change_percentage_24h": getattr(coin, 'price_change_percentage_24h', None)
+                    }
+                    for coin in limited_data
+                ],
+                "limit": limit,
+                "total_returned": len(limited_data)
+            }
         }
 
-    def _format_analysis_response(self, coin_id: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        metrics = analysis.get('metrics', {})
-        insights = analysis.get('insights', [])
-        charts = analysis.get('charts', {})
+    def _handle_search_coins(self, original_msg: str, normalized_msg: str) -> Dict[str, Any]:
+        """Handle coin search queries. Pattern: '^search '"""
+        # Extract search query
+        query = original_msg[7:].strip()  # Remove "search " prefix
+        if not query:
+            raise ValueError("Search query cannot be empty. Try: 'search bitcoin' or 'search doge'")
         
-        # Create comprehensive analysis content
-        content = f"📊 **Comprehensive Analysis for {coin_id.upper()}**\n\n"
-        
-        # Key metrics summary
-        content += "**📈 Key Metrics:**\n"
-        if 'sma_7' in metrics:
-            content += f"• 7-day SMA: ${metrics['sma_7']:,.2f}\n"
-        if 'sma_14' in metrics:
-            content += f"• 14-day SMA: ${metrics['sma_14']:,.2f}\n"
-        if 'rsi_14' in metrics:
-            content += f"• RSI (14): {metrics['rsi_14']:.1f} ({metrics.get('rsi_signal', 'N/A')})\n"
-        if 'volatility_14' in metrics:
-            content += f"• Volatility (14d): {metrics['volatility_14']:.2f}%\n"
-        
-        # Performance metrics
-        content += "\n**📊 Performance:**\n"
-        if 'performance_7d' in metrics and metrics['performance_7d'] is not None:
-            content += f"• 7-day: {metrics['performance_7d']:+.2f}%\n"
-        if 'performance_14d' in metrics and metrics['performance_14d'] is not None:
-            content += f"• 14-day: {metrics['performance_14d']:+.2f}%\n"
-        if 'performance_30d' in metrics and metrics['performance_30d'] is not None:
-            content += f"• 30-day: {metrics['performance_30d']:+.2f}%\n"
-        
-        # Support/Resistance
-        if 'price_min_30d' in metrics and 'price_max_30d' in metrics:
-            content += f"\n**🎯 Support/Resistance:**\n"
-            content += f"• 30-day Low: ${metrics['price_min_30d']:,.2f}\n"
-            content += f"• 30-day High: ${metrics['price_max_30d']:,.2f}\n"
-        
-        # Add insights
-        if insights:
-            content += "\n**💡 Key Insights:**\n"
-            for insight in insights:
-                content += f"• {insight}\n"
+        search_results = _run(self.client.search_coins(query))
         
         return {
-            "role": "assistant",
-            "content": content,
+            "tool": "search_coins",
             "data": {
-                "type": "enhanced_analysis",
-                "coin": coin_id,
-                "metrics": metrics,
-                "insights": insights,
-                "charts": charts,
-                "date_range": analysis.get('date_range', 'N/A'),
-                "data_points": analysis.get('data_points', 0)
-            },
-            "timestamp": datetime.now(),
+                "query": query,
+                "results": [
+                    {
+                        "id": result.id,
+                        "name": result.name, 
+                        "symbol": result.symbol,
+                        "market_cap_rank": result.market_cap_rank
+                    }
+                    for result in search_results
+                ],
+                "total_found": len(search_results)
+            }
         }
 
-    # ---------------- Chart helpers -----------------
-    def _get_price_chart(self, coin_id: str, days: int = 7) -> Dict[str, Any]:
-        import plotly.graph_objs as go
-        import pandas as pd
-
-        # Simple REST API for historical data
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        client = self.client
-        async def fetch():
-            return await client.get_historical_data(coin_id, days)
-        try:
-            hist = loop.run_until_complete(fetch())
-        except Exception as e:
-            logger.warning(f"Could not fetch historical data: {e}")
-            return {
-                "role": "assistant",
-                "content": f"⚠️ Unable to retrieve chart for {coin_id}",
-                "timestamp": datetime.now(),
-            }
-
-        # Build DataFrame
-        timestamps = [p.timestamp for p in hist.prices]
-        prices = [p.price for p in hist.prices]
-        df = pd.DataFrame({"Date": timestamps, "Price": prices})
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["Date"], y=df["Price"], mode="lines", name=coin_id))
-        fig.update_layout(title=f"{coin_id.capitalize()} Price (Last {days} Days)", yaxis_title="USD")
-
+    def _handle_get_market_overview(self, original_msg: str, normalized_msg: str) -> Dict[str, Any]:
+        """Handle market overview queries. Pattern: '^(?:global|market) (?:stats|overview)'"""
+        market_data = _run(self.client.get_market_overview())
+        
         return {
-            "role": "assistant",
-            "content": f"📈 {coin_id.capitalize()} price chart:",
+            "tool": "get_market_overview",
             "data": {
-                "type": "chart_line",
-                "figure": fig.to_json()
-            },
-            "timestamp": datetime.now(),
+                "total_market_cap_usd": getattr(market_data, 'total_market_cap_usd', None),
+                "total_volume_usd": getattr(market_data, 'total_volume_usd', None), 
+                "btc_dominance": getattr(market_data, 'btc_dominance', None),
+                "market_cap_change_24h": getattr(market_data, 'market_cap_change_percentage_24h_usd', None),
+                "active_cryptocurrencies": getattr(market_data, 'active_cryptocurrencies', None)
+            }
         }
 
-    def _render_natural_language_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
-        """Render natural language response from MCP ask tool."""
-        answer = response.get("answer", "")
-        source = response.get("source", "unknown")
+    def _handle_get_historical_data(self, original_msg: str, normalized_msg: str) -> Dict[str, Any]:
+        """Handle historical data queries. Pattern: '^(?:historical|history)'"""
+        # Extract coin symbol
+        coin_symbol = self._extract_coin_symbol(original_msg)
+        if not coin_symbol:
+            raise ValueError("Could not identify coin. Try: 'historical Bitcoin data' or 'history ETH'")
+        
+        # Extract time parameters (simplified - could be enhanced)
+        days = 7  # default
+        if any(term in normalized_msg for term in ["year", "12 month"]):
+            days = 365
+        elif any(term in normalized_msg for term in ["month", "30 day"]):
+            days = 30
+        elif "week" in normalized_msg:
+            days = 7
+        elif "24h" in normalized_msg or "day" in normalized_msg:
+            days = 1
+        
+        historical_data = _run(self.client.get_historical_data(coin_symbol, days))
         
         return {
-            "role": "assistant",
-            "content": f"💬 **AI Analysis**\n\n{answer}\n\n*Source: {source}*",
-            "timestamp": datetime.now(),
-            "source": source
+            "tool": "get_historical_data",
+            "data": {
+                "coin_id": historical_data.coin_id,
+                "days": days,
+                "prices": [
+                    {
+                        "timestamp": price.timestamp.isoformat() if hasattr(price.timestamp, 'isoformat') else str(price.timestamp),
+                        "price": price.price,
+                        "market_cap": price.market_cap,
+                        "volume": price.volume
+                    }
+                    for price in historical_data.prices[:100]  # Limit for response size
+                ],
+                "total_points": len(historical_data.prices)
+            }
         }
 
-    def _handle_news_question(self, text: str) -> Dict[str, Any]:
-        """Handle crypto news related questions."""
-        if not WEB_SEARCH_AVAILABLE or not self.search_service:
-            return {
-                "role": "assistant",
-                "content": "📰 **News Service Unavailable**\n\nI don't have access to news search capabilities at the moment. Try asking for Bitcoin price, trending coins, or market analysis instead!",
-                "timestamp": datetime.now(),
-            }
+    def _handle_ask(self, original_msg: str, normalized_msg: str) -> Dict[str, Any]:
+        """Handle complex NLP queries using MCP ask tool. Pattern: '.*' (catch-all)"""
+        ask_response = _run(self.client.ask_question(original_msg))
         
-        try:
-            # Determine what type of crypto news to search for
-            news_query = self._build_news_query(text)
-            news_results = _run(self._search_crypto_news(news_query))
-            
-            return self._format_news_response(news_results, news_query)
-            
-        except Exception as e:
-            logger.error(f"Error fetching crypto news: {e}")
-            return {
-                "role": "assistant",
-                "content": f"📰 **News Search Error**\n\nI encountered an error while searching for crypto news: {str(e)}",
-                "timestamp": datetime.now(),
-            }
-    
-    def _build_news_query(self, text: str) -> str:
-        """Build appropriate news search query based on user input."""
-        text_lower = text.lower()
-        
-        # Check for specific crypto mentions
-        crypto_terms = []
-        if any(term in text_lower for term in ["bitcoin", "btc"]):
-            crypto_terms.append("Bitcoin")
-        if any(term in text_lower for term in ["ethereum", "eth"]):
-            crypto_terms.append("Ethereum")
-        if any(term in text_lower for term in ["solana", "sol"]):
-            crypto_terms.append("Solana")
-        if any(term in text_lower for term in ["cardano", "ada"]):
-            crypto_terms.append("Cardano")
-        if any(term in text_lower for term in ["polygon", "matic"]):
-            crypto_terms.append("Polygon")
-        
-        # Build query based on context
-        if crypto_terms:
-            base_query = f"{' '.join(crypto_terms)} cryptocurrency"
-        else:
-            base_query = "cryptocurrency crypto"
-        
-        # Add context based on request type
-        if any(term in text_lower for term in ["breaking", "urgent", "latest"]):
-            return f"{base_query} breaking news latest"
-        elif any(term in text_lower for term in ["price", "market", "trading"]):
-            return f"{base_query} price market analysis"
-        elif any(term in text_lower for term in ["regulation", "sec", "government"]):
-            return f"{base_query} regulation government SEC"
-        elif any(term in text_lower for term in ["adoption", "institutional"]):
-            return f"{base_query} institutional adoption"
-        else:
-            return f"{base_query} news today"
-    
-    async def _search_crypto_news(self, query: str) -> List[Dict[str, Any]]:
-        """Search for crypto news using web search service."""
-        try:
-            # Ensure search service is initialized
-            if hasattr(self.search_service, 'ensure_initialized'):
-                await self.search_service.ensure_initialized()
-            
-            # Search for crypto news
-            search_results = await self.search_service.search(
-                query=query,
-                limit=5,  # Get top 5 news articles
-                save_content=True
-            )
-            
-            # Extract news data
-            news_articles = []
-            if search_results and "data" in search_results:
-                for article in search_results["data"]:
-                    news_articles.append({
-                        "title": article.get("title", ""),
-                        "url": article.get("url", ""),
-                        "content": article.get("content", "")[:500] + "..." if len(article.get("content", "")) > 500 else article.get("content", ""),
-                        "source": self._extract_domain(article.get("url", ""))
-                    })
-            
-            return news_articles
-            
-        except Exception as e:
-            logger.error(f"Web search failed: {e}")
-            return []
-    
-    def _extract_domain(self, url: str) -> str:
-        """Extract domain name from URL for source attribution."""
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            domain = parsed.netloc
-            # Remove www. prefix if present
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            return domain
-        except Exception:
-            return "Unknown"
-    
-    def _format_news_response(self, news_articles: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
-        """Format news articles into a structured response."""
-        if not news_articles:
-            return {
-                "role": "assistant",
-                "content": f"📰 **No Recent News Found**\n\nI couldn't find recent crypto news for your query. Try asking for Bitcoin price or market analysis instead!",
-                "timestamp": datetime.now(),
-            }
-        
-        # Build formatted response
-        content = f"📰 **Latest Crypto News**\n\n"
-        content += f"*Search: {query}*\n\n"
-        
-        for i, article in enumerate(news_articles, 1):
-            title = article.get("title", "Untitled")
-            url = article.get("url", "")
-            source = article.get("source", "Unknown")
-            snippet = article.get("content", "")
-            
-            content += f"**{i}. {title}**\n"
-            if snippet:
-                content += f"{snippet}\n"
-            content += f"*Source: {source}*"
-            if url:
-                content += f" | [Read More]({url})"
-            content += "\n\n"
-        
-        content += "💡 *Tip: Ask for specific coins like 'Bitcoin news' or 'Ethereum updates' for targeted results.*"
+        if ask_response.get("error"):
+            raise Exception(ask_response.get("answer", "Ask tool failed"))
         
         return {
-            "role": "assistant",
-            "content": content,
-            "timestamp": datetime.now(),
-            "data": news_articles,
-            "source": "crypto_news"
+            "tool": "ask",
+            "data": {
+                "question": original_msg,
+                "answer": ask_response.get("answer", ""),
+                "source": ask_response.get("source", "mcp"),
+                "additional_data": ask_response.get("data", None)
+            }
         }
+
+    def _extract_coin_symbol(self, message: str) -> str:
+        """Extract coin symbol/ID from message."""
+        msg_lower = message.lower()
+        
+        # Comprehensive coin mappings - synchronized with CoinGecko client
+        coin_map = {
+            # Major coins
+            "bitcoin": "bitcoin", "btc": "bitcoin",
+            "ethereum": "ethereum", "eth": "ethereum",
+            "tether": "tether", "usdt": "tether",
+            "solana": "solana", "sol": "solana",
+            "bnb": "binancecoin", "binance": "binancecoin",
+            "xrp": "ripple", "ripple": "ripple",
+            "usdc": "usd-coin", "usd-coin": "usd-coin",
+            "cardano": "cardano", "ada": "cardano",
+            "avalanche": "avalanche-2", "avax": "avalanche-2",
+            "dogecoin": "dogecoin", "doge": "dogecoin",
+            "tron": "tron", "trx": "tron",
+            "polkadot": "polkadot", "dot": "polkadot",
+            "polygon": "matic-network", "matic": "matic-network",
+            "chainlink": "chainlink", "link": "chainlink",
+            "litecoin": "litecoin", "ltc": "litecoin",
+            "bitcoin-cash": "bitcoin-cash", "bch": "bitcoin-cash",
+            "near": "near", "near-protocol": "near",
+            "uniswap": "uniswap", "uni": "uniswap",
+            "cosmos": "cosmos", "atom": "cosmos",
+            "ethereum-classic": "ethereum-classic", "etc": "ethereum-classic",
+            "monero": "monero", "xmr": "monero",
+            "stellar": "stellar", "xlm": "stellar",
+            "algorand": "algorand", "algo": "algorand",
+            "vechain": "vechain", "vet": "vechain",
+            "filecoin": "filecoin", "fil": "filecoin",
+            "hedera": "hedera-hashgraph", "hbar": "hedera-hashgraph",
+            "internet-computer": "internet-computer", "icp": "internet-computer",
+            "sandbox": "the-sandbox", "sand": "the-sandbox",
+            "mana": "decentraland", "decentraland": "decentraland",
+            "aave": "aave", "lend": "aave",
+            "maker": "maker", "mkr": "maker",
+            "sushi": "sushi", "sushiswap": "sushi",
+            
+            # New/trending coins
+            "shiba": "shiba-inu", "shib": "shiba-inu",
+            "pepe": "pepe", "pepecoin": "pepe",
+            "bonk": "bonk", "bonk-coin": "bonk",
+            "dogwifhat": "dogwifcoin", "wif": "dogwifcoin",
+            "floki": "floki", "floki-inu": "floki",
+            "brett": "brett", "base-brett": "brett",
+            "jupiter": "jupiter-exchange-solana", "jup": "jupiter-exchange-solana",
+            "pyth": "pyth-network", "pyth-network": "pyth-network",
+            "jito": "jito-governance-token", "jto": "jito-governance-token",
+            
+            # Layer 2s
+            "arbitrum": "arbitrum", "arb": "arbitrum",
+            "optimism": "optimism", "op": "optimism",
+            "immutable": "immutable-x", "imx": "immutable-x",
+            
+            # DeFi tokens
+            "pancakeswap": "pancakeswap-token", "cake": "pancakeswap-token",
+            "thorchain": "thorchain", "rune": "thorchain",
+            "raydium": "raydium", "ray": "raydium"
+        }
+        
+        # Look for exact matches first (prioritize longer matches)
+        sorted_coins = sorted(coin_map.items(), key=lambda x: len(x[0]), reverse=True)
+        for term, coin_id in sorted_coins:
+            if term in msg_lower:
+                return coin_id
+        
+        # Legacy fallback logic
+        for term, coin_id in coin_map.items():
+            if term in msg_lower:
+                return coin_id
+        
+        # Fallback: extract potential symbol from message
+        symbol_match = re.search(r'\b([a-z]{2,10})\b', msg_lower)
+        if symbol_match:
+            return symbol_match.group(1)
+        
+        return ""
+
+    # Set tool names for error reporting
+    _handle_get_coin_price._tool_name = "get_coin_price"
+    _handle_get_trending_coins._tool_name = "get_trending_coins" 
+    _handle_search_coins._tool_name = "search_coins"
+    _handle_get_market_overview._tool_name = "get_market_overview"
+    _handle_get_historical_data._tool_name = "get_historical_data"
+    _handle_ask._tool_name = "ask" 

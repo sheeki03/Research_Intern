@@ -1078,11 +1078,6 @@ class CoinGeckoMCPClient:
         """Search web for recent crypto news related to market movement."""
         try:
             # Build search query based on direction and question
-            if direction == "down":
-                search_terms = ["crypto market crash", "bitcoin dump", "cryptocurrency decline", "crypto news today"]
-            else:
-                search_terms = ["crypto market rally", "bitcoin pump", "cryptocurrency surge", "crypto news today"]
-            
             # Extract specific coins from question for targeted search
             question_lower = question.lower()
             specific_coins = []
