@@ -42,6 +42,18 @@ brotli>=1.1.0  # For Brotli compression support in sitemaps
 pandas>=2.1.0
 numpy>=1.24.0
 
+# ===== MCP & CRYPTO ANALYSIS =====
+# MCP (Model Context Protocol) Dependencies
+aiofiles>=23.2.1  # Already included above
+asyncio>=3.4.3
+websockets>=12.0  # For MCP SSE connections
+pydantic>=2.0.0  # For data validation and models
+
+# Visualization & Charting
+plotly>=5.17.0  # Interactive charts
+altair>=5.0.0   # Statistical visualizations  
+bokeh>=3.0.0    # Alternative plotting library
+
 # ===== AUTHENTICATION & SECURITY =====
 bcrypt>=4.1.0
 cryptography>=41.0.0

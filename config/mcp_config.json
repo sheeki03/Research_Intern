@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "coingecko": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.api.coingecko.com/sse"
+      ],
+      "timeout": 30,
+      "retryAttempts": 3,
+      "rateLimits": {
+        "requestsPerMinute": 100,
+        "burstSize": 10
+      }
+    }
+  },
+  "fallbackEndpoints": {
+    "coingecko_rest": "https://api.coingecko.com/api/v3"
+  },
+  "connection": {
+    "maxRetries": 3,
+    "retryDelay": 5,
+    "healthCheckInterval": 60,
+    "connectionTimeout": 30
+  },
+  "logging": {
+    "level": "INFO",
+    "enableDebug": false,
+    "logMCPMessages": true
+  }
+} 

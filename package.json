@@ -1,0 +1,16 @@
+{
+  "name": "research-intern-mcp",
+  "version": "1.0.0",
+  "description": "MCP client dependencies for crypto research assistant",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.4.0",
+    "mcp-remote": "^0.1.0"
+  },
+  "keywords": ["mcp", "cryptocurrency", "ai"],
+  "author": "",
+  "license": "MIT"
+} 
