@@ -31,6 +31,10 @@ class OpenRouterClient:
         self.nanogpt_api_key = os.getenv("NANOGPT_API_KEY")
         self.nanogpt_base_url = os.getenv("NANOGPT_BASE_URL", "https://nano-gpt.com/api/v1")
         
+        # Warn if nano-gpt key is missing
+        if not self.nanogpt_api_key:
+            print("Warning: NANOGPT_API_KEY is not set. DMind models will not work.")
+        
         # Backward compatibility - keep old attribute names
         self.api_key = self.openrouter_api_key
         self.base_url = self.openrouter_base_url
@@ -43,9 +47,18 @@ class OpenRouterClient:
     
     def _get_provider_config(self, model: str) -> Dict[str, Any]:
         """Get provider-specific configuration based on model name."""
-        if model.startswith("nanogpt/"):
-            # Nano-GPT provider
-            actual_model = model.replace("nanogpt/", "", 1)  # Remove prefix for API call
+        if model.startswith("nanogpt/") or model.startswith("dmind/"):
+            # Nano-GPT provider (handles both nanogpt/ and dmind/ prefixes)
+            if model.startswith("nanogpt/"):
+                actual_model = model.replace("nanogpt/", "", 1)  # Remove prefix for API call
+            else:  # dmind/ prefix - keep the full name for nano-gpt API
+                actual_model = model  # Keep full name including dmind/ prefix
+            
+            # Check if API key is available
+            if not self.nanogpt_api_key:
+                print(f"Error: NANOGPT_API_KEY not set but required for model {model}")
+                return None
+                
             return {
                 "base_url": self.nanogpt_base_url,
                 "headers": {
@@ -72,6 +85,10 @@ class OpenRouterClient:
     async def _make_request(self, model: str, messages: list, temperature: float = 0.7) -> Optional[Dict[str, Any]]:
         """Make an asynchronous request to the appropriate API provider."""
         provider_config = self._get_provider_config(model)
+        if provider_config is None:
+            print(f"Cannot get provider config for model {model}")
+            return None
+            
         url = f"{provider_config['base_url']}/chat/completions"
         
         payload = {
