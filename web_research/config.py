@@ -5,7 +5,7 @@ from typing import Dict, Optional
 
 from rich.console import Console
 
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OPENAI_MODEL = "qwen/qwen3-30b-a3b:free"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 DEFAULT_OLLAMA_MODEL = None
 

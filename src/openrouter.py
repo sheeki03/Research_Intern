@@ -171,9 +171,9 @@ class OpenRouterClient:
             response_data = await self._make_request(model_override, messages, temperature)
             
             # If override model fails, try fallback
-            if not response_data and model_override != "openai/gpt-4o-mini":
-                print(f"Model {model_override} failed, falling back to openai/gpt-4o-mini")
-                response_data = await self._make_request("openai/gpt-4o-mini", messages, temperature)
+            if not response_data and model_override != "qwen/qwen3-30b-a3b:free":
+                print(f"Model {model_override} failed, falling back to qwen/qwen3-30b-a3b:free")
+                response_data = await self._make_request("qwen/qwen3-30b-a3b:free", messages, temperature)
         else:
             # Use primary model with fallback logic
             provider_config = self._get_provider_config(self.primary_model)
@@ -181,9 +181,9 @@ class OpenRouterClient:
             response_data = await self._make_request(self.primary_model, messages, temperature)
             
             # If primary model fails, try fallback
-            if not response_data and self.primary_model != "openai/gpt-4o-mini":
-                print(f"Primary model {self.primary_model} failed, falling back to openai/gpt-4o-mini")
-                response_data = await self._make_request("openai/gpt-4o-mini", messages, temperature)
+            if not response_data and self.primary_model != "qwen/qwen3-30b-a3b:free":
+                print(f"Primary model {self.primary_model} failed, falling back to qwen/qwen3-30b-a3b:free")
+                response_data = await self._make_request("qwen/qwen3-30b-a3b:free", messages, temperature)
         
         # Process the response (regardless of which model was used)
         if response_data and "choices" in response_data and response_data["choices"]:

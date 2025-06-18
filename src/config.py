@@ -28,7 +28,7 @@ if not OPENROUTER_API_KEY:
 
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 # Set the default model for the application. This can be overridden by user selection in the UI.
-OPENROUTER_PRIMARY_MODEL = os.getenv("OPENROUTER_PRIMARY_MODEL", "openai/gpt-4o-mini")
+OPENROUTER_PRIMARY_MODEL = os.getenv("OPENROUTER_PRIMARY_MODEL", "qwen/qwen3-30b-a3b:free")
 
 # Nano-GPT Configuration
 NANOGPT_API_KEY = os.getenv("NANOGPT_API_KEY")
@@ -48,7 +48,6 @@ AI_MODEL_OPTIONS = {
     "google/gemini-2.5-pro-preview": "Gemini 2.5 Pro",
     "openai/o3": "OpenAI o3",
     "openai/gpt-4.1": "GPT-4.1",
-    "openai/gpt-4o-mini": "GPT-4o Mini",
     "anthropic/claude-sonnet-4": "Claude Sonnet 4",
     "tngtech/deepseek-r1t-chimera:free": "DeepSeek R1T Chimera",
 }
