@@ -117,14 +117,29 @@ class DocSendClient:
                 chrome_options.binary_location = chrome_bin
                 print(f"Using Chrome binary from environment: {chrome_bin}")
             else:
-                # Try to find Chrome or Chromium binary
+                # Try to find Chrome or Chromium binary (cross-platform)
                 import shutil
-                for binary in ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']:
-                    binary_path = shutil.which(binary)
-                    if binary_path:
-                        chrome_options.binary_location = binary_path
-                        print(f"Found Chrome/Chromium binary: {binary_path}")
-                        break
+                import platform
+                
+                # Platform-specific Chrome paths
+                if platform.system() == 'Darwin':  # macOS
+                    macos_chrome_paths = [
+                        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                        '/Applications/Chromium.app/Contents/MacOS/Chromium'
+                    ]
+                    for path in macos_chrome_paths:
+                        if os.path.exists(path):
+                            chrome_options.binary_location = path
+                            print(f"Found macOS Chrome binary: {path}")
+                            break
+                else:
+                    # Linux/Windows - use shutil.which
+                    for binary in ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']:
+                        binary_path = shutil.which(binary)
+                        if binary_path:
+                            chrome_options.binary_location = binary_path
+                            print(f"Found Chrome/Chromium binary: {binary_path}")
+                            break
             
             # Try to use system chromedriver first, then fallback to ChromeDriverManager
             service = None
@@ -232,29 +247,59 @@ class DocSendClient:
     def _detect_available_browsers(self) -> list:
         """Detect which browsers are available on the system without initializing them."""
         available = []
+        import os
+        import platform
         
         # Check for Chrome/Chromium binary
         try:
             import shutil
-            chrome_binaries = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']
-            if any(shutil.which(binary) for binary in chrome_binaries):
-                available.append('chrome')
+            
+            # Different binary names for different platforms
+            if platform.system() == 'Darwin':  # macOS
+                # Check for macOS Chrome app
+                chrome_paths = [
+                    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                    '/Applications/Chromium.app/Contents/MacOS/Chromium'
+                ]
+                if any(os.path.exists(path) for path in chrome_paths):
+                    available.append('chrome')
+            else:  # Linux/Windows
+                chrome_binaries = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']
+                if any(shutil.which(binary) for binary in chrome_binaries):
+                    available.append('chrome')
         except:
             pass
         
         # Check for Firefox binary
         try:
             import shutil
-            if shutil.which('firefox') or shutil.which('firefox-esr'):
-                available.append('firefox')
+            
+            if platform.system() == 'Darwin':  # macOS
+                firefox_paths = [
+                    '/Applications/Firefox.app/Contents/MacOS/firefox',
+                    '/Applications/Firefox.app/Contents/MacOS/Firefox'
+                ]
+                if any(os.path.exists(path) for path in firefox_paths):
+                    available.append('firefox')
+            else:  # Linux/Windows
+                if shutil.which('firefox') or shutil.which('firefox-esr'):
+                    available.append('firefox')
         except:
             pass
         
-        # Check for Edge binary (less common in containers)
+        # Check for Edge binary
         try:
             import shutil
-            if shutil.which('microsoft-edge') or shutil.which('msedge'):
-                available.append('edge')
+            
+            if platform.system() == 'Darwin':  # macOS
+                edge_paths = [
+                    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+                ]
+                if any(os.path.exists(path) for path in edge_paths):
+                    available.append('edge')
+            else:  # Linux/Windows
+                if shutil.which('microsoft-edge') or shutil.which('msedge'):
+                    available.append('edge')
         except:
             pass
         
@@ -262,21 +307,14 @@ class DocSendClient:
     
     def _init_browser(self):
         """Initialize and return a configured browser instance with robust fallback support."""
-        # Prioritize Chrome for container environments
-        browsers_to_try = ['chrome']  # Start with Chrome only for better reliability
+        # Always try Chrome first with ChromeDriverManager (works on all platforms)
+        browsers_to_try = ['chrome']
         
-        # Only add other browsers if specifically requested or Chrome fails
+        # Add other browsers based on preference
         if self.preferred_browser == 'firefox':
             browsers_to_try = ['firefox', 'chrome']
         elif self.preferred_browser == 'edge':
             browsers_to_try = ['edge', 'chrome']
-        elif self.preferred_browser == 'auto':
-            # For auto mode, try Chrome first, then others if available
-            available_browsers = self._detect_available_browsers()
-            if 'chrome' in available_browsers:
-                browsers_to_try = ['chrome']
-            else:
-                browsers_to_try = available_browsers
         
         last_error = None
         initialization_attempts = []
@@ -314,15 +352,11 @@ class DocSendClient:
         for attempt in initialization_attempts:
             error_details.append(f"  - {attempt}")
         
-        if not available_browsers:
-            error_details.append("\n🔧 SOLUTION: Install Chrome in your container:")
-            error_details.append("  - Add to Dockerfile: RUN apt-get update && apt-get install -y google-chrome-stable")
-            error_details.append("  - Or use a base image with Chrome pre-installed")
-        else:
-            error_details.append(f"\n🔧 SOLUTION: Check WebDriver setup for {available_browsers[0]}:")
-            error_details.append("  - Ensure proper permissions on driver executables")
-            error_details.append("  - Check for missing shared libraries")
-            error_details.append("  - Verify container has necessary dependencies")
+        error_details.append("\n🔧 SOLUTIONS:")
+        error_details.append("1. ChromeDriverManager should auto-download drivers")
+        error_details.append("2. For containers: RUN apt-get update && apt-get install -y google-chrome-stable")
+        error_details.append("3. For local development: Install Chrome/Firefox manually")
+        error_details.append("4. Check if there are networking issues preventing driver downloads")
         
         final_error_msg = "\n".join(error_details)
         raise WebDriverException(final_error_msg)
@@ -348,7 +382,26 @@ class DocSendClient:
             if progress_callback:
                 progress_callback(10, "Loading DocSend page...")
             
-            browser.get(url)
+            # Validate URL format
+            if not url or not isinstance(url, str):
+                raise ValueError("Invalid URL: URL cannot be empty")
+            
+            if not url.startswith(('http://', 'https://')):
+                raise ValueError(f"Invalid URL format: {url} (must start with http:// or https://)")
+            
+            if 'docsend.com' not in url.lower():
+                raise ValueError(f"Invalid DocSend URL: {url} (must contain 'docsend.com')")
+            
+            print(f"Loading DocSend URL: {url}")
+            try:
+                browser.get(url)
+            except Exception as e:
+                error_msg = str(e)
+                if "invalid argument" in error_msg.lower():
+                    raise ValueError(f"Invalid DocSend URL format: {url}. Please check the URL is correct and accessible.")
+                else:
+                    raise ValueError(f"Failed to load DocSend URL: {error_msg}")
+            
             # Human-like delay - vary between 2-4 seconds
             import random
             time.sleep(random.uniform(2.5, 4.0))
@@ -608,13 +661,15 @@ class DocSendClient:
                 
             except TimeoutException:
                 # No email required, continue
+                password_input = None  # Initialize password_input for timeout case
                 pass
             except Exception as e:
                 print(f"Email input handling failed: {str(e)}")
                 # Continue anyway - maybe email isn't required
+                password_input = None  # Initialize password_input for the case where email handling fails
                 pass
             
-                                    # Handle password prompt if present (after email) - only if not already handled
+            # Handle password prompt if present (after email) - only if not already handled
             if not password_input:  # Only check for separate password if we didn't handle it in the form
                 try:
                     # Look for password field with a longer wait since it might appear after email processing
