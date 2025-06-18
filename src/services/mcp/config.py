@@ -23,9 +23,29 @@ class MCPConfig:
             config_path: Path to MCP config file. Defaults to config/mcp_config.json
         """
         if config_path is None:
-            # Default to config/mcp_config.json from project root
-            project_root = Path(__file__).parent.parent.parent.parent
-            config_path = project_root / "config" / "mcp_config.json"
+            # Try multiple potential locations for the config file
+            potential_paths = [
+                # First try environment variable if set
+                os.environ.get('MCP_CONFIG_PATH'),
+                # Docker container path
+                '/app/config/mcp_config.json',
+                # Local development path (relative to project root)
+                Path(__file__).parent.parent.parent.parent / "config" / "mcp_config.json",
+                # Alternative relative path
+                './config/mcp_config.json',
+                # Current directory
+                'mcp_config.json'
+            ]
+            
+            config_path = None
+            for path in potential_paths:
+                if path and Path(path).exists():
+                    config_path = path
+                    break
+            
+            if config_path is None:
+                # If no config found, default to the expected Docker location
+                config_path = '/app/config/mcp_config.json'
         
         self.config_path = Path(config_path)
         self._config: Optional[Dict[str, Any]] = None
@@ -35,7 +55,10 @@ class MCPConfig:
         """Load configuration from JSON file."""
         try:
             if not self.config_path.exists():
-                raise FileNotFoundError(f"MCP config file not found: {self.config_path}")
+                logger.warning(f"MCP config file not found: {self.config_path}")
+                logger.info("Creating default MCP configuration...")
+                self._create_default_config()
+                return
             
             with open(self.config_path, 'r') as f:
                 self._config = json.load(f)
@@ -45,7 +68,54 @@ class MCPConfig:
             
         except Exception as e:
             logger.error(f"Failed to load MCP config: {e}")
-            raise
+            logger.info("Falling back to default configuration...")
+            self._create_default_config()
+    
+    def _create_default_config(self) -> None:
+        """Create a default configuration if none exists."""
+        self._config = {
+            "mcpServers": {
+                "coingecko": {
+                    "command": "npx",
+                    "args": [
+                        "mcp-remote",
+                        "https://mcp.api.coingecko.com/sse"
+                    ],
+                    "timeout": 30,
+                    "retryAttempts": 3,
+                    "rateLimits": {
+                        "requestsPerMinute": 100,
+                        "burstSize": 10
+                    }
+                }
+            },
+            "fallbackEndpoints": {
+                "coingecko_rest": "https://api.coingecko.com/api/v3"
+            },
+            "connection": {
+                "maxRetries": 3,
+                "retryDelay": 5,
+                "healthCheckInterval": 60,
+                "connectionTimeout": 30
+            },
+            "logging": {
+                "level": "INFO",
+                "enableDebug": False,
+                "logMCPMessages": True
+            }
+        }
+        
+        # Try to create the config directory and file
+        try:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.config_path, 'w') as f:
+                json.dump(self._config, f, indent=2)
+            logger.info(f"Default MCP configuration created at {self.config_path}")
+        except Exception as e:
+            logger.warning(f"Could not save default config to {self.config_path}: {e}")
+            logger.info("Using in-memory default configuration")
+        
+        self._validate_config()
     
     def _validate_config(self) -> None:
         """Validate the loaded configuration structure."""

@@ -71,6 +71,9 @@ RUN playwright install-deps
 # Copy the rest of the application
 COPY . .
 
+# Ensure config directory and files are present
+RUN ls -la /app/config/ || echo "Config directory not found"
+
 # Create necessary directories
 RUN mkdir -p logs reports
 

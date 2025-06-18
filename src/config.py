@@ -40,8 +40,8 @@ NANOGPT_BASE_URL = os.getenv("NANOGPT_BASE_URL", "https://nano-gpt.com/api/v1")
 # Standard AI Model Options for both Interactive Research and Notion Automation
 AI_MODEL_OPTIONS = {
     # Nano-GPT Models
-    "nanogpt/dmind/dmind-1": "DMind-1",
-    "nanogpt/dmind/dmind-1-mini": "DMind-1 Mini", 
+    "dmind/dmind-1": "DMind-1",
+    "dmind/dmind-1-mini": "DMind-1 Mini", 
     # OpenRouter Models
     "qwen/qwen3-30b-a3b:free": "Qwen3 30B",
     "qwen/qwen3-235b-a22b:free": "Qwen3 235B",
