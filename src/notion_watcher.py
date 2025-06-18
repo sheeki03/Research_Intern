@@ -350,6 +350,7 @@ def poll_notion_db(
     *,
     last_updated: datetime | None = None,
     created_after: datetime | int | float | timedelta | None = None,
+    ready_for_rating_only: bool = False,
 ) -> List[Dict[str, str]]:
     """Return pages whose **Completed** checkbox is set to ✅.
 
@@ -362,6 +363,8 @@ def poll_notion_db(
         If provided, include only pages whose ``created_time`` is *on or after*
         this timestamp (UTC).  Useful to limit the polling window, e.g., to
         the last 30 days.
+    ready_for_rating_only
+        If True, only return pages that are in the "Ready for Rating" column/status.
 
     Returns
     -------
@@ -456,6 +459,34 @@ def poll_notion_db(
                 break
 
         page_id: str = cast(str, page["id"])
+
+        # ------------------------------------------------------------------
+        # Check "Ready for Rating" column filter if requested
+        # ------------------------------------------------------------------
+        if ready_for_rating_only:
+            # Look for Status/Stage column that contains "Ready for Rating"
+            ready_for_rating = False
+            properties = page.get("properties", {})
+            
+            # Check common column names for status/stage
+            for prop_name, prop_value in properties.items():
+                if prop_name.lower() in ["status", "stage", "pipeline", "state"]:
+                    if prop_value.get("type") == "select" and prop_value.get("select"):
+                        select_name = prop_value["select"].get("name", "")
+                        if "ready for rating" in select_name.lower():
+                            ready_for_rating = True
+                            break
+                    elif prop_value.get("type") == "multi_select":
+                        multi_select = prop_value.get("multi_select", [])
+                        for item in multi_select:
+                            if "ready for rating" in item.get("name", "").lower():
+                                ready_for_rating = True
+                                break
+                        if ready_for_rating:
+                            break
+            
+            if not ready_for_rating:
+                continue  # Skip pages not in "Ready for Rating"
 
         # ------------------------------------------------------------------
         # Scan all "Due Diligence" child pages for a *completed* questionnaire

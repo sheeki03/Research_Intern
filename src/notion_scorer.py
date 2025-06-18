@@ -209,14 +209,43 @@ Return ONLY this JSON format (no extra text):
 }}
 """
     
-    response = await client.generate_response(
-        prompt=simple_prompt,
-        system_prompt="You are an investment analyst. Return only valid JSON with the exact format requested.",
-        temperature=0.0
-    )
-    
-    if not response:
-        raise RuntimeError("Fallback scoring got empty response")
+    try:
+        response = await client.generate_response(
+            prompt=simple_prompt,
+            system_prompt="You are an investment analyst. Return only valid JSON with the exact format requested.",
+            temperature=0.0
+        )
+        
+        if not response:
+            _logger.error("action=fallback_empty_response message=Even fallback scoring got empty response")
+            # Return ultimate fallback with default values
+            return {
+                "IDO": "No",
+                "IDO_Rationale": "AI scoring system unavailable - manual review required",
+                "Investment": "No", 
+                "Investment_Rationale": "Unable to complete automated assessment due to system issues",
+                "Advisory": "No",
+                "Advisory_Rationale": "Scoring system failure - manual evaluation needed",
+                "BullCase": "Unable to assess positive aspects due to system error",
+                "BearCase": "System failure indicates need for manual risk assessment",
+                "Conviction": "BearCase",
+                "Comments": "Automated scoring failed - all recommendations require manual review"
+            }
+    except Exception as fallback_api_error:
+        _logger.error("action=fallback_api_error error=%s", str(fallback_api_error))
+        # Return ultimate fallback if even the fallback API call fails
+        return {
+            "IDO": "No",
+            "IDO_Rationale": "Critical system error - scoring unavailable",
+            "Investment": "No", 
+            "Investment_Rationale": "System failure prevents automated investment assessment",
+            "Advisory": "No",
+            "Advisory_Rationale": "Advisory recommendation unavailable due to technical issues",
+            "BullCase": "System error prevents positive case analysis",
+            "BearCase": "Technical failure represents significant operational risk",
+            "Conviction": "BearCase", 
+            "Comments": "Complete scoring system failure - immediate manual review required"
+        }
     
     # Try to parse the simplified response
     cleaned = _clean_and_fix_json(response)
@@ -312,14 +341,22 @@ You MUST use EXACTLY these field names in your JSON response:
 Return ONLY JSON with these exact field names - no other fields."""
     
     # Use OpenRouter client with more explicit JSON formatting
-    response_text = await client.generate_response(
-        prompt=user_prompt + "\n\nIMPORTANT: Return ONLY valid JSON with no trailing commas or syntax errors.",
-        system_prompt=system_prompt,
-        temperature=0.0  # Even lower temperature for consistent JSON formatting
-    )
-    
-    if not response_text:
-        raise RuntimeError("Failed to get scoring response from AI")
+    try:
+        response_text = await client.generate_response(
+            prompt=user_prompt + "\n\nIMPORTANT: Return ONLY valid JSON with no trailing commas or syntax errors.",
+            system_prompt=system_prompt,
+            temperature=0.0  # Even lower temperature for consistent JSON formatting
+        )
+        
+        if not response_text:
+            _logger.error("action=empty_response_from_ai message=AI returned empty response, attempting fallback")
+            # Try fallback scoring immediately if main response is empty
+            return await _fallback_simple_scoring(client, ddq_text, ai_text, calls_text, freeform_text)
+            
+    except Exception as api_error:
+        _logger.error("action=api_error_in_scoring error=%s", str(api_error))
+        # Try fallback scoring if API call fails
+        return await _fallback_simple_scoring(client, ddq_text, ai_text, calls_text, freeform_text)
     
     try:
         # Parse the JSON response

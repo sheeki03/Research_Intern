@@ -403,6 +403,15 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         with col1:
             st.markdown("### 📄 **Step 1: Load Notion Pages**")
             st.write("Get pages with completed Due Diligence Questionnaires")
+            
+            # Add Ready for Rating filter checkbox
+            ready_for_rating_filter = st.checkbox(
+                "🔥 Only show pages in 'Ready for Rating' status",
+                value=st.session_state.get('notion_ready_for_rating_filter', False),
+                key="notion_ready_for_rating_filter",
+                help="Filter to only show pages that are in the 'Ready for Rating' column/status in Notion"
+            )
+            
         with col2:
             # Smart loading button
             cache_data = self._load_cache()
@@ -428,6 +437,18 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         if cache_data and not st.session_state.get('notion_available_pages'):
             st.info("💾 Loading cached pages automatically...")
             await self._load_cached_pages()
+        
+        # Re-filter cached pages if filter checkbox changed
+        elif st.session_state.get('notion_available_pages') and st.session_state.get('pages_from_cache'):
+            # Check if we need to re-apply the Ready for Rating filter to cached pages
+            cached_filter_state = st.session_state.get('cached_ready_for_rating_filter', None)
+            current_filter_state = st.session_state.get('notion_ready_for_rating_filter', False)
+            
+            if cached_filter_state != current_filter_state:
+                st.info("🔄 Re-filtering cached pages based on Ready for Rating setting...")
+                # Re-load and filter the cache
+                await self._load_cached_pages()
+                st.session_state.cached_ready_for_rating_filter = current_filter_state
         
         # Step 2: Page Selection - Single Selection Only
         if st.session_state.get('notion_available_pages'):
@@ -498,8 +519,28 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             cache_data = self._load_cache()
             if cache_data and cache_data.get('pages'):
                 pages = cache_data['pages']
+                
+                # Apply Ready for Rating filter if enabled
+                ready_for_rating_filter = st.session_state.get('notion_ready_for_rating_filter', False)
+                if ready_for_rating_filter:
+                    # We need to re-fetch the actual page data to check the status column
+                    # Since cached pages don't include the full property data needed for filtering
+                    from src.notion_watcher import poll_notion_db
+                    
+                    # Re-fetch with filter applied
+                    filtered_pages_data = poll_notion_db(
+                        created_after=30,
+                        ready_for_rating_only=True
+                    )
+                    
+                    # Convert to our expected format and filter the cached list
+                    filtered_page_ids = {page_data["page_id"] for page_data in filtered_pages_data}
+                    pages = [page for page in pages if page['id'] in filtered_page_ids]
+                
                 st.session_state.notion_available_pages = pages
                 st.session_state.pages_from_cache = True
+                # Track the filter state used for this cache load
+                st.session_state.cached_ready_for_rating_filter = ready_for_rating_filter
                 
                 # Show cache info
                 cache_time = cache_data.get('timestamp')
@@ -509,8 +550,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 else:
                     formatted_time = "Unknown"
                 
-                self._add_automation_log(f"Loaded {len(pages)} pages from cache (cached at {formatted_time})")
-                self.show_success(f"💾 Loaded {len(pages)} pages from cache!")
+                filter_text = " (Ready for Rating filter applied)" if ready_for_rating_filter else ""
+                self._add_automation_log(f"Loaded {len(pages)} pages from cache (cached at {formatted_time}){filter_text}")
+                cache_text = f"💾 Loaded {len(pages)} pages from cache{filter_text}!"
+                self.show_success(cache_text)
                 
                 # Show cache details
                 with st.expander("## 💾 Cache Information", expanded=False):
@@ -535,7 +578,11 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 from datetime import timedelta
                 
                 # Fetch pages from the last 30 days with completed DDQs
-                pages_data = poll_notion_db(created_after=30)
+                ready_for_rating_filter = st.session_state.get('notion_ready_for_rating_filter', False)
+                pages_data = poll_notion_db(
+                    created_after=30,
+                    ready_for_rating_only=ready_for_rating_filter
+                )
                 
                 # Convert to our expected format
                 pages = []
@@ -555,10 +602,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 # Save to cache
                 self._save_cache(pages)
                 
-                self._add_automation_log(f"Fetched {len(pages)} fresh pages from Notion API and updated cache")
+                filter_log = " (Ready for Rating filter: ON)" if ready_for_rating_filter else " (Ready for Rating filter: OFF)"
+                self._add_automation_log(f"Fetched {len(pages)} fresh pages from Notion API and updated cache{filter_log}")
                 
                 if pages:
-                    self.show_success(f"🔍 Fetched {len(pages)} fresh pages from Notion API! Cache updated.")
+                    filter_text = " in 'Ready for Rating' status" if ready_for_rating_filter else ""
+                    self.show_success(f"🔍 Fetched {len(pages)} fresh pages{filter_text} from Notion API! Cache updated.")
                     
                     # Show detailed results
                     with st.expander("## 📋 Fresh API Results", expanded=True):
@@ -587,8 +636,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                         st.write(f"💾 **Cache Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                         st.write(f"⏱️ **Cache Valid Until:** {(datetime.now() + timedelta(hours=CACHE_DURATION_HOURS)).strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
-                    st.warning("⚠️ No pages found with completed Due Diligence Questionnaires")
-                    st.info("💡 **To see pages here:**\n- Go to your Notion database\n- Create a 'Due Diligence' child page\n- Complete the questionnaire and check it as done")
+                    if ready_for_rating_filter:
+                        st.warning("⚠️ No pages found with completed Due Diligence Questionnaires in 'Ready for Rating' status")
+                        st.info("💡 **To see pages here:**\n- Go to your Notion database\n- Create a 'Due Diligence' child page\n- Complete the questionnaire and check it as done\n- Set the page status to 'Ready for Rating'")
+                    else:
+                        st.warning("⚠️ No pages found with completed Due Diligence Questionnaires")
+                        st.info("💡 **To see pages here:**\n- Go to your Notion database\n- Create a 'Due Diligence' child page\n- Complete the questionnaire and check it as done")
                 
         except Exception as e:
             self.show_error(f"Failed to fetch fresh pages: {str(e)}")
@@ -1079,7 +1132,11 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 
                 # Step 2: Query database
                 self._update_progress(40, "Querying database for completed DDQs...")
-                pages_data = poll_notion_db(created_after=30)  # Last 30 days
+                ready_for_rating_filter = st.session_state.get('notion_ready_for_rating_filter', False)
+                pages_data = poll_notion_db(
+                    created_after=30,  # Last 30 days
+                    ready_for_rating_only=ready_for_rating_filter
+                )
                 await asyncio.sleep(0.5)
                 
                 # Step 3: Process results
@@ -1118,10 +1175,12 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                 st.session_state.notion_last_poll_results = results
                 
                 # Add log entry
-                self._add_automation_log(f"Manual database poll completed - found {len(pages)} pages")
+                filter_log = " (Ready for Rating filter: ON)" if ready_for_rating_filter else " (Ready for Rating filter: OFF)"
+                self._add_automation_log(f"Manual database poll completed - found {len(pages)} pages{filter_log}")
                 
                 # Show success with detailed results
-                self.show_success(f"✅ Database poll completed! Found {len(pages)} pages with completed DDQs")
+                filter_text = " in 'Ready for Rating' status" if ready_for_rating_filter else ""
+                self.show_success(f"✅ Database poll completed! Found {len(pages)} pages with completed DDQs{filter_text}")
                 
                 # Display the actual results
                 if pages:
@@ -1153,7 +1212,10 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
                                         st.caption(f"🕐 {time_str}")
                                 st.divider()
                 else:
-                    st.info("ℹ️ No pages found with completed Due Diligence Questionnaires in the last 30 days")
+                    if ready_for_rating_filter:
+                        st.info("ℹ️ No pages found with completed Due Diligence Questionnaires in 'Ready for Rating' status in the last 30 days")
+                    else:
+                        st.info("ℹ️ No pages found with completed Due Diligence Questionnaires in the last 30 days")
                 
             self._end_operation()
                 
