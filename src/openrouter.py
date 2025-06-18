@@ -120,10 +120,13 @@ class OpenRouterClient:
                     
                     print(f"HTTP Error making request to {provider_config['provider']} API with {model}: Status {e.status}, Message: {e.message}")
                     try:
-                        error_body = await e.read()
-                        print(f"Error body: {error_body.decode()}")
+                        # Read error body from the response text if available
+                        error_body = str(e)
+                        if hasattr(e, 'text') and e.text:
+                            error_body = e.text
+                        print(f"Error details: {error_body}")
                     except Exception as read_e:
-                        print(f"Could not read error body: {read_e}")
+                        print(f"Could not read error details: {read_e}")
                     return None
                 except aiohttp.ClientError as e:
                     print(f"Client Error making request to {provider_config['provider']} API with {model}: {e}")
@@ -145,15 +148,25 @@ class OpenRouterClient:
         response_data = None
         
         if model_override:
-            # Use the specified override model
+            # Use the specified override model with fallback
             provider_config = self._get_provider_config(model_override)
             print(f"Using model override: {model_override} via {provider_config['provider']}")
             response_data = await self._make_request(model_override, messages, temperature)
+            
+            # If override model fails, try fallback
+            if not response_data and model_override != "openai/gpt-4o-mini":
+                print(f"Model {model_override} failed, falling back to openai/gpt-4o-mini")
+                response_data = await self._make_request("openai/gpt-4o-mini", messages, temperature)
         else:
             # Use primary model with fallback logic
             provider_config = self._get_provider_config(self.primary_model)
             print(f"Using primary model: {self.primary_model} via {provider_config['provider']}")
             response_data = await self._make_request(self.primary_model, messages, temperature)
+            
+            # If primary model fails, try fallback
+            if not response_data and self.primary_model != "openai/gpt-4o-mini":
+                print(f"Primary model {self.primary_model} failed, falling back to openai/gpt-4o-mini")
+                response_data = await self._make_request("openai/gpt-4o-mini", messages, temperature)
         
         # Process the response (regardless of which model was used)
         if response_data and "choices" in response_data and response_data["choices"]:

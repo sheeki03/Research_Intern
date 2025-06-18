@@ -919,10 +919,22 @@ class InteractiveResearchPage(BasePage):
         
         with st.spinner("Generating report..."):
             try:
-                # Process URLs and content
-                await self._process_web_content()
-                
-                # Generate AI report
+                # Debug information
+                debug_container = st.container()
+                with debug_container:
+                    st.write("🔍 **Debug Information:**")
+                    st.write(f"- Research query: {bool(research_query)}")
+                    st.write(f"- Documents: {len(st.session_state.get('processed_documents_content', []))}")
+                    st.write(f"- Web content: {len(st.session_state.get('scraped_web_content', []))} + {len(st.session_state.get('crawled_web_content', []))}")
+                    st.write(f"- OpenRouter client: {bool(st.session_state.get('openrouter_client'))}")
+                    
+                    # Process URLs and content
+                    st.write("📊 Processing web content...")
+                    await self._process_web_content()
+                    
+                    # Generate AI report
+                    st.write("🤖 Calling AI for report generation...")
+                    
                 report_content = await self._call_ai_for_report()
                 
                 if report_content:
@@ -959,14 +971,25 @@ class InteractiveResearchPage(BasePage):
                             print(f"DEBUG: Error logging report generation: {e}")  # Debug print
                     
                     # Build RAG context
+                    with debug_container:
+                        st.write("🔗 Building RAG context...")
                     await self._build_rag_context(report_id)
                     
                     self.show_success("Report generated successfully!")
+                    # Clear debug info on success
+                    debug_container.empty()
                 else:
                     self.show_error("Failed to generate report. AI returned empty response.")
+                    st.error("**Debug:** AI API call completed but returned None or empty string")
+                    # Don't clear debug info on failure - leave it visible
                     
             except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"ERROR in _generate_report: {error_details}")
                 self.show_error(f"Error generating report: {str(e)}")
+                st.error(f"**Full error details:**\n```\n{error_details}\n```")
+                # Don't clear debug info on error - leave it visible
         
         st.rerun()
     
@@ -1065,6 +1088,7 @@ class InteractiveResearchPage(BasePage):
     async def _call_ai_for_report(self) -> str:
         """Call AI to generate the report."""
         if not st.session_state.openrouter_client:
+            st.error("DEBUG: OpenRouter client not found in session state")
             return ""
         
         # Prepare content
@@ -1116,12 +1140,23 @@ class InteractiveResearchPage(BasePage):
         prompt += "Based on the above content, please generate a comprehensive research report."
         
         try:
+            # Debug information about prompt
+            st.write(f"📝 Prompt length: {len(prompt)} characters")
+            st.write(f"📊 Content summary:")
+            st.write(f"  - Research query: {len(research_query)} chars")
+            st.write(f"  - Combined docs: {len(combined_docs)} chars")
+            st.write(f"  - Combined web: {len(combined_web)} chars")
+            st.write(f"  - DocSend content: {len(docsend_content)} chars")
+            
             model_to_use = st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL)
             system_prompt = st.session_state.get("system_prompt", "You are a helpful research assistant.")
+            
+            st.write(f"🤖 Using model: {model_to_use}")
             
             # Record start time for processing time calculation
             start_time = time.time()
             
+            st.write("📡 Making API call...")
             response = await st.session_state.openrouter_client.generate_response(
                 prompt=prompt,
                 system_prompt=system_prompt,
@@ -1130,6 +1165,8 @@ class InteractiveResearchPage(BasePage):
             
             # Calculate processing time
             processing_time = time.time() - start_time
+            st.write(f"⏱️ API call completed in {processing_time:.2f} seconds")
+            st.write(f"📄 Response length: {len(response) if response else 0} characters")
             
             # Log AI interaction
             log_ai_interaction(
@@ -1146,12 +1183,16 @@ class InteractiveResearchPage(BasePage):
             return response or ""
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"ERROR in _call_ai_for_report: {error_details}")
+            
             # Log failed AI interaction
             log_ai_interaction(
                 user=st.session_state.get('username', 'UNKNOWN'),
                 role=st.session_state.get('role', 'N/A'),
                 model=st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL),
-                prompt=prompt,
+                prompt=prompt if 'prompt' in locals() else "",
                 response="",
                 processing_time=0.0,
                 page="Interactive Research",
@@ -1159,6 +1200,14 @@ class InteractiveResearchPage(BasePage):
             )
             
             self.show_error(f"Error calling AI: {str(e)}")
+            st.error(f"**AI API Error Details:**\n```\n{error_details}\n```")
+            return ""
+        except Exception as outer_e:
+            import traceback
+            outer_error_details = traceback.format_exc()
+            print(f"OUTER ERROR in _call_ai_for_report: {outer_error_details}")
+            self.show_error(f"Outer error in AI call: {str(outer_e)}")
+            st.error(f"**Outer Error Details:**\n```\n{outer_error_details}\n```")
             return ""
     
     async def _build_rag_context(self, report_id: str) -> None:
