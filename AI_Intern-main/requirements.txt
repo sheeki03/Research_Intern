@@ -1,0 +1,20 @@
+notion-client>=2.2.0
+# Core HTTP + retry + OpenAI client
+openai>=1.14.3
+httpx>=0.25.2
+tenacity>=8.0.0
+python-dotenv>=1.0.1
+# Vendored library dependencies:
+aiofiles>=23.2.1
+aiohttp>=3.9.0
+duckduckgo-search==7.5.0
+firecrawl-py>=2.4.0 # Keep firecrawl itself
+kitchenai-whisk
+playwright==1.50.0
+prompt-toolkit>=3.0.0
+rich>=13.7.0
+tiktoken>=0.5.0
+typer>=0.9.0
+# Testing
+pytest>=7.4.0
+# Add any transitive dependencies if they weren't installed before

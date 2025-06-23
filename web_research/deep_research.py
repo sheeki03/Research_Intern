@@ -11,7 +11,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 from prompt import system_prompt
 import json
 from src.config import SYSTEM_PROMPT
-from src.openrouter import OpenRouterClient
+# Use simple OpenAI client instead of complex OpenRouterClient to avoid import issues
+import openai
+from openai import OpenAI
 
 
 class SearchResponse(TypedDict):
@@ -265,7 +267,7 @@ async def deep_research(
     return {"learnings": all_learnings, "visited_urls": all_urls}
 
 
-async def process_search_results(results: List[Dict[str, Any]], client: OpenRouterClient) -> Dict[str, Any]:
+async def process_search_results(results: List[Dict[str, Any]], client: OpenAI) -> Dict[str, Any]:
     """Process search results and extract insights."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -275,7 +277,7 @@ async def process_search_results(results: List[Dict[str, Any]], client: OpenRout
     # ... rest of the function ...
 
 
-async def generate_final_report(insights: Dict[str, Any], client: OpenRouterClient) -> str:
+async def generate_final_report(insights: Dict[str, Any], client: OpenAI) -> str:
     """Generate a final research report."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
