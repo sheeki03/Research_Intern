@@ -2,8 +2,7 @@ import streamlit as st
 import asyncio
 from typing import Optional
 from src.pages.base_page import BasePage
-from src.controllers.voice_cloner_controller import VoiceClonerController
-from src.models.voice_cloner_models import VoiceClonerInput
+from src.controllers.voice_cloner_controller import VoiceClonerController, VoiceClonerInput
 from src.config import OPENROUTER_PRIMARY_MODEL
 
 class VoiceClonerPage(BasePage):
