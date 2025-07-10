@@ -15,6 +15,7 @@ from src.audit_logger import get_audit_logger
 from src.pages.interactive_research import InteractiveResearchPage
 from src.pages.notion_automation import NotionAutomationPage
 from src.pages.crypto_chatbot import CryptoChatbotPage
+from src.pages.voice_cloner_page import VoiceClonerPage
 from src.utils.session_persistence import url_session_persistence
 
 
@@ -26,6 +27,7 @@ class AppController:
             "Interactive Research": InteractiveResearchPage(),
             "Crypto AI Assistant": CryptoChatbotPage(),
             "Notion Automation": NotionAutomationPage(),
+            "Voice Cloner": VoiceClonerPage(),
         }
         self.current_page = None
 
