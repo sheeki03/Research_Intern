@@ -69,105 +69,75 @@ coverage.xml
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
 
-# ===== APPLICATION SPECIFIC =====
-# Logs
-logs/
+# ===== LOGS =====
 *.log
+logs/
+log/
 
-# Configuration files with sensitive data
-config/users.yaml
-config/secrets.yaml
-config/local.yaml
+# ===== TEMPORARY & BACKUP FILES =====
+temp_file.py
+temp_*.py
+*_backup.py
+*_backup.*
+backup_*
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
 
-# Output and reports
-output/
-reports/
-cache/
+# ===== DUPLICATE DOCUMENTATION =====
+README-task-master.md
+CLAUDE.md
+*-task-master.md
+
+# ===== AI ASSISTANT RULES =====
+.cursorrules
+.windsurfrules
+.clauderules
+*rules.md
+
+# ===== STANDALONE SCRIPTS =====
+prompt.py
+standalone_*.py
+test_*.py
+
+# ===== EMPTY DIRECTORIES =====
+tasks/
 temp/
 tmp/
 
-# API keys and secrets
-.env.local
-.env.production
-.env.staging
-secrets.json
-api_keys.txt
+# ===== MISC ROOT CLUTTER =====
+*.md.backup
+*_old.*
+*_tmp.*
 
-# ===== BROWSER AUTOMATION =====
-# Playwright
-playwright-report/
-test-results/
+# ===== TASKMASTER =====
+# Ignore temporary and cache files, but keep important config and docs
+.taskmaster/state.json
+.taskmaster/cache/
+.taskmaster/temp/
+.taskmaster/logs/
+.taskmaster/reports/*.json
 
-# Selenium
-selenium-debug.log
-geckodriver.log
-chromedriver.log
+# Keep these TaskMaster files (documented for clarity):
+# .taskmaster/config.json - Project configuration
+# .taskmaster/docs/ - PRDs and documentation  
+# .taskmaster/tasks/ - Task definitions
+# .taskmaster/reports/*.md - Markdown reports
 
-# ===== AI/ML =====
-# Model files
-*.pkl
-*.joblib
-*.h5
-*.hdf5
-models/
-checkpoints/
+# ===== PROJECT-SPECIFIC =====
+cache/
+output/
+reports/
+web_research/
 
-# Vector databases
-faiss_index/
-chroma_db/
-
-# ===== DOCUMENTATION =====
-# Sphinx documentation
-docs/_build/
-
-# ===== BACKUP & TEMPORARY FILES =====
-*.bak
-*.backup
-*.tmp
-*.temp
-*~
-.#*
-\#*#
-
-# ===== SPECIFIC FILES TO IGNORE =====
-# Specific log files that were previously tracked
-logs/writer.log
-logs/watcher.log
-logs/research.log
-logs/audit.log
-
-# Specific reports that were previously tracked
-reports/enhanced_report_*.md
-
-# Cursor AI rules (if you want to keep them private)
-.cursorrules
-
-# ===== SYSTEM FILES =====
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon?
-
-# Linux
-*~
-.fuse_hidden*
-.directory
-.Trash-*
-
-# ===== REDIS DATA =====
-dump.rdb
-appendonly.aof
-
-# ===== NODE.JS (if any frontend components) =====
+# ===== NODE.JS =====
 node_modules/
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
+yarn-error.log* 
+/.claude
 /.cursor
+.env.example
+/.taskmaster
