@@ -239,6 +239,7 @@ class NotionAutomationPage(BasePage):
             'notion_crawled_web_content': [],
             'notion_docsend_content': '',
             'notion_docsend_metadata': {},
+            'notion_deep_research_enabled': False,
         }
         self.init_session_state(required_keys)
     
@@ -678,6 +679,9 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
             st.info("💡 Select a page above to enable operations")
             # Don't use st.stop() here as it prevents admin panel from rendering
             return
+        
+        # Research Engine Selection
+        await self._render_notion_research_engine_toggle()
         
         # Quick settings
         col1, col2 = st.columns([2, 1])
@@ -1948,43 +1952,17 @@ FIRECRAWL_BASE_URL=your_firecrawl_base_url
         return combined
     
     async def _run_enhanced_research(self, page_id, page_title, combined_content, model):
-        """Run AI research on combined content using OpenRouterClient directly."""
+        """Run AI research on combined content using selected research engine."""
         try:
-            # Get our OpenRouter client
-            client = st.session_state.get('notion_openrouter_client')
-            if not client:
-                raise RuntimeError("OpenRouter client not available")
+            # Check if Deep Research is enabled
+            deep_research_enabled = st.session_state.get('notion_deep_research_enabled', False)
             
-            # Generate enhanced research report using our client directly
-            research_prompt = f"""
-Please analyze the following comprehensive research material and generate a detailed due diligence report.
-
-# Research Material for {page_title}
-
-{combined_content}
-
-Please provide:
-1. Executive Summary
-2. Key Findings
-3. Technology Analysis
-4. Business Model Assessment
-5. Risk Analysis
-6. Market Analysis
-7. Team Assessment
-8. Financial Analysis
-9. Competitive Landscape
-10. Investment Recommendation
-
-Format your response as a comprehensive markdown report with clear headings and bullet points.
-Include specific data points and quotes from the source material where relevant.
-"""
-            
-            # Generate the report using OpenRouterClient
-            report_md = await client.generate_response(
-                prompt=research_prompt,
-                system_prompt="You are an expert investment analyst conducting due diligence research. Provide thorough, analytical insights based on the provided materials.",
-                model_override=model
-            )
+            if deep_research_enabled:
+                # Use ODR for deep research
+                report_md = await self._run_odr_enhanced_research(page_id, page_title, combined_content, model)
+            else:
+                # Use classic research pipeline
+                report_md = await self._run_classic_enhanced_research(page_id, page_title, combined_content, model)
             
             # Handle None response from API
             if not report_md:
@@ -3196,3 +3174,240 @@ Please provide a helpful response acknowledging that you don't have access to th
             return f"# 📚 Additional Research Sources\n\n" + "\n".join(additional_sections)
         else:
             return ""
+    
+    async def _render_notion_research_engine_toggle(self) -> None:
+        """Render research engine selection for Notion automation."""
+        st.markdown("#### 🔬 **Research Engine**")
+        
+        # Check ODR availability
+        odr_available = await self._check_notion_odr_availability()
+        
+        if odr_available:
+            research_mode = st.radio(
+                "Choose Research Engine:",
+                options=["Classic", "Deep Research (ODR)"],
+                index=0 if not st.session_state.get('notion_deep_research_enabled', False) else 1,
+                key="notion_research_mode_selector",
+                help="Classic: Traditional research using DDQ and provided sources. Deep Research: Advanced multi-agent research with web search and citations.",
+                horizontal=True
+            )
+            
+            deep_research_enabled = (research_mode == "Deep Research (ODR)")
+            st.session_state.notion_deep_research_enabled = deep_research_enabled
+            
+            if deep_research_enabled:
+                st.success("🔬 **Deep Research Active**: Using LangChain's ODR framework for enhanced analysis")
+                
+                # ODR configuration (compact)
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    breadth = st.number_input(
+                        "Research Breadth",
+                        min_value=1,
+                        max_value=10,
+                        value=st.session_state.get('notion_deep_research_breadth', 6),
+                        key="notion_deep_research_breadth",
+                        help="Concurrent research units"
+                    )
+                with col2:
+                    depth = st.number_input(
+                        "Research Depth",
+                        min_value=1,
+                        max_value=5,
+                        value=st.session_state.get('notion_deep_research_depth', 4),
+                        key="notion_deep_research_depth",
+                        help="Research iterations"
+                    )
+                with col3:
+                    max_tools = st.number_input(
+                        "Max Tool Calls",
+                        min_value=1,
+                        max_value=10,
+                        value=st.session_state.get('notion_deep_research_max_tools', 8),
+                        key="notion_deep_research_max_tools",
+                        help="Tool calls per iteration"
+                    )
+                
+                # Session state values are automatically managed by widget keys
+                
+            else:
+                st.info("📝 **Classic Mode**: Traditional research using DDQ data and provided sources")
+        else:
+            # ODR not available
+            st.warning("🔬 **Deep Research Unavailable**: Using Classic mode only.")
+            st.session_state.notion_deep_research_enabled = False
+            st.info("📝 **Classic Mode**: Traditional research using DDQ data and provided sources")
+        
+        st.markdown("---")
+    
+    async def _check_notion_odr_availability(self) -> bool:
+        """Check if ODR is available for Notion automation."""
+        try:
+            from src.services.odr_service import check_odr_availability
+            is_available, error = await check_odr_availability()
+            
+            if not is_available and error:
+                st.session_state.notion_odr_error = error
+            
+            return is_available
+        except Exception:
+            return False
+    
+    async def _run_odr_enhanced_research(self, page_id, page_title, combined_content, model):
+        """Run enhanced research using ODR framework."""
+        try:
+            from src.services.odr_service import generate_deep_research_report
+            import re
+            
+            # Prepare research query from page title and content
+            research_query = f"Conduct comprehensive due diligence analysis for {page_title}"
+            
+            # Parse combined content to extract different source types
+            documents = []
+            web_sources = []
+            docsend_sources = []
+            
+            # Extract document sources from combined content
+            if "## 📄 Additional Documents" in combined_content:
+                doc_pattern = r"### Document: (.+?)\n(.*?)(?=### Document:|## |$)"
+                for match in re.finditer(doc_pattern, combined_content, re.DOTALL):
+                    doc_name, doc_content = match.groups()
+                    documents.append({
+                        'name': doc_name.strip(),
+                        'content': doc_content.strip()
+                    })
+            
+            # Extract web sources from enhanced storage
+            scraped_content = st.session_state.get('notion_scraped_web_content', [])
+            for item in scraped_content:
+                if item.get("chunks"):
+                    # Use enhanced chunked content
+                    content = "\n\n".join([chunk['text'] for chunk in item['chunks']])
+                else:
+                    content = item.get('original_content', item.get('content', ''))
+                
+                web_sources.append({
+                    'url': item['url'],
+                    'content': content,
+                    'status': 'success'
+                })
+            
+            # Extract DocSend sources
+            docsend_content = st.session_state.get('notion_docsend_content', '')
+            if docsend_content:
+                docsend_metadata = st.session_state.get('notion_docsend_metadata', {})
+                docsend_sources.append({
+                    'url': docsend_metadata.get('url', 'Unknown'),
+                    'content': docsend_content,
+                    'metadata': docsend_metadata
+                })
+            
+            # Add the DDQ/Notion content as a special document
+            documents.append({
+                'name': f'Due Diligence Questionnaire - {page_title}',
+                'content': combined_content
+            })
+            
+            # ODR configuration
+            config = {
+                'breadth': st.session_state.get('notion_deep_research_breadth', 6),
+                'depth': st.session_state.get('notion_deep_research_depth', 4),
+                'max_tool_calls': st.session_state.get('notion_deep_research_max_tools', 8),
+                'model': model,
+                'research_focus': 'investment due diligence',
+                'output_format': 'comprehensive markdown report with executive summary, analysis sections, and investment recommendation'
+            }
+            
+            # Display debug info
+            st.write(f"🔬 **ODR Deep Research for {page_title}**")
+            st.write(f"  - Documents: {len(documents)}")
+            st.write(f"  - Web sources: {len(web_sources)}")
+            st.write(f"  - DocSend sources: {len(docsend_sources)}")
+            st.write(f"  - Configuration: {config}")
+            
+            # Show content integration status  
+            total_sources = len(documents) + len(web_sources) + len(docsend_sources)
+            if total_sources > 0:
+                st.success(f"✅ **Content Integration**: {total_sources} sources (including DDQ) will be used as PRIMARY sources")
+                st.info("🎯 **Research Strategy**: ODR will analyze your DDQ data + additional sources, then supplement with web research for comprehensive due diligence")
+            else:
+                st.info("🔍 **DDQ + Web Research**: ODR will analyze the DDQ questionnaire and supplement with comprehensive web research")
+            
+            # Generate report using ODR
+            with st.spinner(f"🔬 Conducting deep research for {page_title}... This may take several minutes."):
+                result = await generate_deep_research_report(
+                    query=research_query,
+                    documents=documents,
+                    web_sources=web_sources,
+                    docsend_sources=docsend_sources,
+                    config=config
+                )
+            
+            if result.success:
+                st.success(f"✅ **ODR Research Completed** for {page_title}")
+                st.write(f"  - Content length: {len(result.content):,} characters")
+                st.write(f"  - Citations: {len(result.citations)}")
+                st.write(f"  - Processing time: {result.processing_time:.1f}s")
+                
+                # Store ODR metadata
+                st.session_state.notion_odr_result_metadata = result.research_metadata
+                st.session_state.notion_odr_citations = result.citations
+                
+                return result.content
+            else:
+                st.error(f"❌ **ODR Research Failed** for {page_title}: {result.error_message}")
+                
+                # Fallback to classic mode
+                st.warning("🔄 **Falling back to Classic mode**")
+                return await self._run_classic_enhanced_research(page_id, page_title, combined_content, model)
+                
+        except Exception as e:
+            st.error(f"❌ **ODR Error** for {page_title}: {str(e)}")
+            
+            # Fallback to classic mode
+            st.warning("🔄 **Falling back to Classic mode**")
+            return await self._run_classic_enhanced_research(page_id, page_title, combined_content, model)
+    
+    async def _run_classic_enhanced_research(self, page_id, page_title, combined_content, model):
+        """Run enhanced research using classic OpenRouter pipeline."""
+        try:
+            # Get our OpenRouter client
+            client = st.session_state.get('notion_openrouter_client')
+            if not client:
+                raise RuntimeError("OpenRouter client not available")
+            
+            # Generate enhanced research report using our client directly
+            research_prompt = f"""
+Please analyze the following comprehensive research material and generate a detailed due diligence report.
+
+# Research Material for {page_title}
+
+{combined_content}
+
+Please provide:
+1. Executive Summary
+2. Key Findings
+3. Technology Analysis
+4. Business Model Assessment
+5. Risk Analysis
+6. Market Analysis
+7. Team Assessment
+8. Financial Analysis
+9. Competitive Landscape
+10. Investment Recommendation
+
+Format your response as a comprehensive markdown report with clear headings and bullet points.
+Include specific data points and quotes from the source material where relevant.
+"""
+            
+            # Generate the report using OpenRouterClient
+            report_md = await client.generate_response(
+                prompt=research_prompt,
+                system_prompt="You are an expert investment analyst conducting due diligence research. Provide thorough, analytical insights based on the provided materials.",
+                model_override=model
+            )
+            
+            return report_md
+            
+        except Exception as e:
+            raise RuntimeError(f"Classic enhanced research failed: {str(e)}")

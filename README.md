@@ -1,544 +1,502 @@
-# AI Research Agent
+# AI Research Agent 🤖📊
 
-A comprehensive AI-powered research platform designed for due diligence, document analysis, and automated content extraction. Features advanced DocSend processing, multi-format document support, web scraping, Notion automation, and intelligent AI analysis.
+> **Advanced Multi-Modal Research Platform with AI-Powered Analysis, Notion CRM Integration, and Crypto Intelligence**
 
----
+A comprehensive, production-ready research automation platform that combines document processing, web scraping, AI analysis, and real-time monitoring to deliver intelligent research workflows.
 
-## ✨ Key Features
+## 🌟 Key Features
 
-### 🔍 **Interactive Research**
-- **DocSend Integration**: Automated processing of DocSend presentations with email authentication, stealth browsing, and OCR text extraction
-- **Multi-Format Document Support**: PDF, DOCX, TXT, MD, and image-based documents with OCR capabilities
-- **Web Content Intelligence**: Firecrawl integration with sitemap discovery and batch URL processing
-- **AI-Powered Analysis**: Generate comprehensive research reports using multiple LLM providers
-- **RAG-Powered Chat**: Ask questions about your research with context-aware responses
+### 🔬 **Interactive Research Suite**
+- **Multi-Format Document Processing**: PDF, DOCX, TXT, Markdown with OCR support
+- **DocSend Integration**: Automated presentation analysis with stealth browsing
+- **Advanced Web Scraping**: Firecrawl-powered content extraction with sitemap discovery
+- **Deep Research Mode**: LangChain's Open Deep Research (ODR) framework integration
+- **RAG-Powered Chat**: Context-aware Q&A about research content using FAISS vector search
 
-### 🤖 **Notion Automation**
-- **CRM Integration**: Monitor and automate Notion database workflows
-- **Automated Research**: Run scheduled research pipelines on new entries
-- **Smart Scoring**: AI-powered scoring and analysis of Notion pages
-- **Automated Writing**: Generate and publish reports directly to Notion
-- **Real-time Monitoring**: Watch for changes and trigger automated workflows
+### 🔗 **Notion CRM Automation**
+- **Real-Time Database Monitoring**: Automated polling of Notion databases
+- **Intelligent Workflow Triggers**: Research pipeline activation on new entries
+- **AI-Powered Project Scoring**: Automated due diligence and evaluation
+- **Direct Publishing**: Research reports published directly to Notion pages
 
+### 💰 **Crypto Intelligence Hub**
+- **Live Market Data**: Real-time cryptocurrency information via CoinGecko MCP
+- **Interactive Analysis**: AI-powered crypto insights and technical analysis
+- **Dynamic Visualizations**: Plotly and Altair-based charts and metrics
+- **Portfolio Intelligence**: Multi-coin comparisons and trend analysis
 
+### 🧠 **Advanced AI Integration**
+- **Multi-Model Support**: GPT-4, Claude Sonnet 4, Gemini 2.5 Pro, Qwen, DeepSeek R1
+- **Nano-GPT Integration**: DMind-1 and specialized models
+- **OpenRouter API**: Unified access to 50+ AI models
+- **Custom Research Prompts**: Specialized prompts for due diligence and analysis
 
-### 🔐 **Security & Authentication**
-- **User Authentication**: Secure login/signup with bcrypt password hashing
-- **Role-Based Access**: Admin and researcher roles with different permissions
-- **Session Management**: Secure session handling with user-specific configurations
-- **Audit Logging**: Comprehensive logging of all user actions and system events
+## 🏗️ Architecture
 
-### 🚀 **Modern Architecture**
-- **Streamlit Interface**: Intuitive web-based UI for all research tasks
-- **Docker Deployment**: Containerized application with Docker Compose
-- **Modular Design**: Clean separation of concerns with controller-based architecture
-- **Async Processing**: High-performance async operations for web scraping and AI calls
-
----
-
-## 🛠️ Technology Stack
-
-### **Core Technologies**
-- **Backend & UI**: Python 3.11+, Streamlit, FastAPI
-- **AI Integration**: OpenRouter API (GPT-4, Claude, Gemini, etc.)
-- **Web Scraping**: Firecrawl OSS, Playwright, BeautifulSoup4
-- **OCR Processing**: Tesseract, Pillow, PyMuPDF
-- **Browser Automation**: Selenium WebDriver with stealth capabilities
-
-### **Document Processing**
-- **PDF**: PyMuPDF (fitz) for text and image extraction
-- **DOCX**: python-docx for Word document processing
-- **Images**: Pillow + Tesseract for OCR text extraction
-- **Web**: BeautifulSoup4 for HTML parsing and content extraction
-
-### **AI & Machine Learning**
-- **LLM Access**: OpenRouter for multiple AI model providers
-- **Embeddings**: Sentence Transformers for semantic search
-- **Vector Search**: FAISS for efficient similarity search
-- **RAG**: Retrieval-Augmented Generation for context-aware responses
-
-### **Infrastructure**
-- **Caching**: Redis for web content and processing results
-- **Storage**: YAML-based configuration and user management
-- **Logging**: Python logging with comprehensive audit trails
-- **Containerization**: Docker and Docker Compose for easy deployment
-
----
-
-## 📋 DocSend Processing Capabilities
-
-### **Automated Authentication**
-- **Email Form Detection**: Automatically detects and fills email authentication forms
-- **Popup Handling**: Waits for authentication popups to disappear after successful submission
-- **Password Support**: Handles password-protected decks when credentials are provided
-- **Multi-Browser Support**: Chrome, Firefox, and Edge with automatic fallback
-
-### **Stealth Browsing**
-- **Bot Detection Avoidance**: Advanced browser configuration to bypass automation detection
-- **Human-like Behavior**: Random delays, realistic typing patterns, and natural navigation
-- **User Agent Spoofing**: Platform-specific user agents for better compatibility
-- **JavaScript Execution**: Removes webdriver properties and adds human-like browser characteristics
-
-### **Content Extraction**
-- **Single-Page Navigation**: Handles DocSend's single-image-per-page presentation format
-- **Automatic Page Detection**: Discovers total page count from navigation indicators
-- **Smart Navigation**: Uses multiple navigation strategies (buttons, keyboard, selectors)
-- **OCR Processing**: Extracts text from each page image with high accuracy
-
-### **Error Handling**
-- **Intelligent Error Detection**: Provides specific error messages for different failure scenarios
-- **Retry Mechanisms**: Automatic retries with exponential backoff
-- **Fallback Strategies**: Multiple approaches for element detection and interaction
-- **Debug Information**: Comprehensive logging for troubleshooting
-
----
-
-## 🗺️ Project Structure
-
-```text
-.
+### **Core Components**
+```
+├── main.py                     # Streamlit application entry point
+├── src/
+│   ├── controllers/            # Application orchestration
+│   │   └── app_controller.py   # Main app controller with auth & routing
+│   ├── pages/                  # Modular page implementations
+│   │   ├── interactive_research.py    # Document processing & AI analysis
+│   │   ├── notion_automation.py       # Notion CRM integration
+│   │   ├── crypto_chatbot.py          # Crypto intelligence interface
+│   │   └── voice_cloner_page.py       # Voice synthesis (experimental)
+│   ├── services/               # External integrations
+│   │   ├── odr_service.py             # Open Deep Research integration
+│   │   ├── user_history_service.py    # Session management
+│   │   └── crypto_analysis/           # Crypto data services
+│   ├── core/                   # Core business logic
+│   │   ├── research_engine.py         # Research automation
+│   │   ├── rag_utils.py              # Vector search & embeddings
+│   │   ├── scanner_utils.py          # Web discovery & parsing
+│   │   └── docsend_client.py         # DocSend processing
+│   └── models/                 # Data models & schemas
 ├── config/                     # Configuration files
-│   └── users.yaml             # User credentials and settings (gitignored)
-├── logs/                      # Application and audit logs (gitignored)
-├── output/                    # Generated reports and outputs (gitignored)
-├── src/                       # Core application source code
-│   ├── controllers/           # Application controllers
-│   │   ├── __init__.py
-│   │   └── app_controller.py  # Main app controller with routing
-│   ├── pages/                 # Streamlit page components
-│   │   ├── __init__.py
-│   │   ├── base_page.py       # Base page class
-│   │   ├── interactive_research.py # Main research interface
-│   │   └── notion_automation.py    # Notion automation features
-│   ├── core/                  # Core processing modules
-│   │   ├── __init__.py
-│   │   ├── docsend_client.py  # DocSend processing with OCR
-│   │   ├── rag_utils.py       # RAG and embedding utilities
-│   │   └── scanner_utils.py   # Web scanning and discovery
-│   ├── models/                # Data models and schemas
-│   │   ├── __init__.py
-│   │   └── chat_models.py     # Chat session models
-│   ├── routers/               # API routers (FastAPI)
-│   │   └── __init__.py
-│   ├── __init__.py
-│   ├── audit_logger.py        # Audit logging setup
-│   ├── config.py             # Centralized configuration
-│   ├── firecrawl_client.py   # Firecrawl OSS integration
-│   ├── init_users.py         # User initialization script
-│   ├── openrouter.py         # OpenRouter API client
-│   ├── research.py           # Research automation
-│   ├── notion_*.py           # Notion integration modules
-│   └── writer.py             # Report writing utilities
-├── tests/                     # Test files
-│   ├── __init__.py
-│   ├── test_firecrawl.py     # Firecrawl integration tests
-│   ├── test_notion_connection.py # Notion API tests
-│   ├── test_research.py      # Research functionality tests
-│   └── test_*.py             # Additional test modules
-├── web_research/              # Alternative research interface
-│   ├── __init__.py
-│   ├── app.py                # Standalone research app
-│   ├── deep_research.py      # Deep research algorithms
-│   └── ai/                   # AI processing modules
-├── cache/                     # Cache directory (gitignored)
-├── reports/                   # Generated reports (gitignored)
-├── .env.example              # Environment variables template
-├── .gitignore               # Git ignore patterns
-├── docker-compose.yml       # Docker Compose configuration
-├── Dockerfile               # Docker image definition
-├── main.py                  # Main application entry point
-├── requirements.txt         # Consolidated Python dependencies
-└── README.md               # This file
+│   ├── users.yaml             # User management
+│   └── mcp_config.json        # MCP integrations
+└── tests/                     # Comprehensive test suite
 ```
 
----
+### **Technology Stack**
+- **Backend**: Python 3.11+, Streamlit, FastAPI
+- **AI/ML**: OpenAI, LangChain, FAISS, sentence-transformers
+- **Browser Automation**: Selenium, Playwright
+- **Document Processing**: PyMuPDF, python-docx, Tesseract OCR
+- **Data**: pandas, numpy, Redis (optional)
+- **Visualization**: Plotly, Altair, Bokeh
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- **Docker & Docker Compose**: [Install Docker](https://docs.docker.com/get-docker/)
-- **Firecrawl OSS**: [Self-hosted instance](https://github.com/mendableai/firecrawl) (optional)
-- **Redis**: For caching (can be included in Docker Compose)
-- **OpenRouter API Key**: [Get API key](https://openrouter.ai/)
+### **1. Installation**
 
-### 1. Clone and Setup
+#### **Option A: Docker (Recommended)**
 ```bash
 git clone <repository-url>
 cd ai-research-agent
 cp .env.example .env
-```
-
-### 2. Configure Environment
-Edit `.env` with your settings:
-```env
-# OpenRouter Configuration (Required)
-OPENROUTER_API_KEY="your_openrouter_api_key"
-OPENROUTER_DEFAULT_MODEL="openai/gpt-4o"
-
-# Firecrawl Configuration (Optional)
-FIRECRAWL_API_URL="http://host.docker.internal:3002/v0/scrape"
-
-# Redis Configuration (Optional)
-REDIS_URL="redis://host.docker.internal:6379/0"
-
-# Application Settings
-STREAMLIT_SERVER_PORT="8501"
-PYTHONPATH="/app"
-
-# OCR Configuration (Auto-detected)
-TESSERACT_CMD="/usr/bin/tesseract"
-```
-
-### 3. Install Dependencies
-```bash
-# Option 1: Using Docker (Recommended)
-docker-compose build
+# Configure your API keys in .env
 docker-compose up -d
-
-# Option 2: Local Installation
-pip install -r requirements.txt
-playwright install  # For web scraping
-streamlit run main.py
 ```
 
-### 4. Access Application
-Open `http://localhost:8501` in your browser.
-
-### 5. Initial Setup
-- **Create Account**: Use the signup form to create your first user account
-- **Configure API Keys**: Add your OpenRouter API key in the environment
-- **Test Features**: Try uploading a document or processing a DocSend deck
-
----
-
-## 📖 Usage Guide
-
-### **Interactive Research Workflow**
-
-#### 1. **Document Processing**
-```bash
-# Upload documents via the web interface
-- PDF files (with OCR for scanned documents)
-- DOCX Word documents
-- TXT and Markdown files
-- Multiple files for batch processing
-```
-
-#### 2. **DocSend Processing**
-```bash
-# Process DocSend presentations
-1. Enter DocSend URL: https://docsend.com/view/...
-2. Provide email address for authentication
-3. Add password if deck is password-protected
-4. Click "Process DocSend Deck"
-5. Wait for OCR extraction to complete
-```
-
-#### 3. **Web Content Extraction**
-```bash
-# Scrape web content
-- Enter individual URLs for targeted scraping
-- Use sitemap discovery for comprehensive site analysis
-- Batch process multiple URLs simultaneously
-- Leverage Firecrawl for intelligent content extraction
-```
-
-#### 4. **AI Analysis**
-```bash
-# Generate comprehensive reports
-1. Define research query or questions
-2. Select AI model (GPT-4, Claude, Gemini, etc.)
-3. Upload documents and/or add web content
-4. Click "Generate Unified Report"
-5. Review AI-generated analysis and insights
-```
-
-#### 5. **Interactive Chat**
-```bash
-# Ask questions about your research
-- Chat interface appears after report generation
-- RAG-powered responses using your research context
-- Ask follow-up questions and get detailed answers
-- Export chat conversations and insights
-```
-
-### **Notion Automation Features**
-
-#### 1. **Database Monitoring**
-- Connect to Notion databases
-- Monitor for new entries and changes
-- Trigger automated research workflows
-- Score and analyze content automatically
-
-#### 2. **Automated Research**
-- Run research pipelines on new Notion entries
-- Generate reports and insights automatically
-- Update Notion pages with research results
-- Schedule periodic research updates
-
-#### 3. **Content Generation**
-- AI-powered content creation for Notion pages
-- Automated report writing and publishing
-- Smart content scoring and analysis
-- Integration with research workflows
-
----
-
-## ⚙️ Configuration
-
-### **Environment Variables**
-```env
-# Required Configuration
-OPENROUTER_API_KEY=your_api_key              # OpenRouter API access
-OPENROUTER_DEFAULT_MODEL=openai/gpt-4o       # Default AI model
-
-# Optional Configuration
-FIRECRAWL_API_URL=http://localhost:3002/v0/scrape  # Firecrawl endpoint
-REDIS_URL=redis://localhost:6379/0                 # Redis cache
-TESSERACT_CMD=/usr/bin/tesseract                   # OCR engine path
-LOG_LEVEL=INFO                                     # Logging level
-MAX_WORKERS=4                                      # Parallel processing
-CACHE_TTL=3600                                     # Cache expiration
-```
-
-### **User Management**
-- **Default Users**: Admin and researcher accounts created on first run
-- **Custom Users**: Create additional users via the signup interface
-- **Role Permissions**: Different access levels for admin and researcher roles
-- **Session Persistence**: User preferences and settings saved across sessions
-
-### **AI Model Configuration**
-```python
-# Available models through OpenRouter
-SUPPORTED_MODELS = {
-    "openai/gpt-4o": "GPT-4 Omni (Latest)",
-    "anthropic/claude-3-sonnet": "Claude 3 Sonnet",
-    "google/gemini-pro": "Gemini Pro",
-    "meta-llama/llama-2-70b-chat": "Llama 2 70B Chat",
-    "mistralai/mixtral-8x7b-instruct": "Mixtral 8x7B Instruct"
-}
-```
-
-### **System Dependencies**
-```bash
-# Browsers (at least one required)
-- Chrome/Chromium (recommended for DocSend)
-- Firefox
-- Microsoft Edge
-
-# OCR Engine
-# macOS
-brew install tesseract
-
-# Ubuntu/Debian
-sudo apt-get install tesseract-ocr
-
-# Windows
-# Download from: https://github.com/UB-Mannheim/tesseract/wiki
-
-# Playwright Browsers (for web scraping)
-playwright install
-```
-
----
-
-## 🔧 Advanced Features
-
-### **DocSend Troubleshooting**
-- **Debug Mode**: Enable verbose logging for DocSend processing
-- **Browser Selection**: Choose between Chrome, Firefox, or Edge
-- **Stealth Configuration**: Advanced anti-detection measures
-- **Manual Intervention**: Pause processing for manual verification
-
-### **OCR Optimization**
-- **Language Support**: Configure Tesseract for multiple languages
-- **Image Preprocessing**: Enhance image quality before OCR
-- **Confidence Scoring**: Filter OCR results by confidence levels
-- **Custom Training**: Use custom Tesseract models for specialized content
-
-### **Performance Tuning**
-- **Parallel Processing**: Configure worker threads for batch operations
-- **Memory Management**: Optimize memory usage for large documents
-- **Cache Strategy**: Fine-tune Redis caching for optimal performance
-- **Rate Limiting**: Configure API rate limits and retry strategies
-
-### **Notion Integration**
-- **Database Connections**: Connect to multiple Notion databases
-- **Automated Workflows**: Set up triggers and automated actions
-- **Content Synchronization**: Keep research data synchronized with Notion
-- **Custom Properties**: Map research data to custom Notion properties
-
----
-
-## 🐛 Troubleshooting
-
-### **Common Issues**
-
-#### DocSend Processing Fails
-```bash
-# Check browser installation
-python -c "from selenium import webdriver; print('Selenium OK')"
-
-# Test OCR functionality
-python -c "import pytesseract; print(pytesseract.get_tesseract_version())"
-
-# Verify network connectivity
-curl -I https://docsend.com
-```
-
-#### Firecrawl Connection Issues
-```bash
-# Test Firecrawl endpoint
-curl -X POST http://localhost:3002/v0/scrape \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com"}'
-```
-
-#### Redis Connection Problems
-```bash
-# Test Redis connectivity
-redis-cli ping
-
-# Check Redis configuration
-redis-cli config get "*"
-```
-
-#### OpenRouter API Issues
-```bash
-# Test API connection
-curl -X POST https://openrouter.ai/api/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-3.5-turbo", "messages": [{"role": "user", "content": "test"}]}'
-```
-
-### **Debug Mode**
-Enable comprehensive debugging:
-```env
-LOG_LEVEL=DEBUG
-SELENIUM_DEBUG=true
-STREAMLIT_LOGGER_LEVEL=debug
-```
-
-### **Browser Issues**
-- **Headless Mode**: Disable for visual debugging
-- **User Agent**: Update user agent strings for compatibility
-- **Permissions**: Ensure proper file system permissions
-- **Dependencies**: Verify all browser drivers are installed
-
----
-
-## 🔒 Security Considerations
-
-### **Data Privacy**
-- **Local Processing**: Documents processed locally by default
-- **API Security**: Secure API key management with environment variables
-- **User Data**: Encrypted password storage using bcrypt
-- **Session Security**: Secure session management with timeout handling
-
-### **Network Security**
-- **HTTPS**: Use HTTPS for production deployments
-- **Firewall**: Configure appropriate firewall rules
-- **VPN**: Consider VPN for sensitive research tasks
-- **Audit Trail**: Comprehensive logging of all user activities
-
-### **Access Control**
-- **Role-Based Permissions**: Different access levels for users
-- **Session Management**: Automatic session timeout and cleanup
-- **API Rate Limiting**: Prevent abuse of external APIs
-- **Input Validation**: Sanitize all user inputs and uploads
-
----
-
-## 🤝 Contributing
-
-### **Development Setup**
+#### **Option B: Local Installation**
 ```bash
 # Clone repository
 git clone <repository-url>
 cd ai-research-agent
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
+
+# Install browser dependencies
 playwright install
 
-# Install system dependencies
-# macOS: brew install tesseract
-# Ubuntu: sudo apt-get install tesseract-ocr
+# Install system dependencies (macOS)
+brew install tesseract
 
-# Run tests
-python -m pytest tests/
+# Install system dependencies (Ubuntu)
+sudo apt-get install tesseract-ocr
 
-# Start development server
+# Install system dependencies (Windows)
+# Download from: https://github.com/UB-Mannheim/tesseract/wiki
+```
+
+### **2. Configuration**
+
+#### **Environment Variables (.env)**
+```env
+# Required: AI Model Access
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# Optional: Additional AI Providers
+OPENAI_API_KEY=your_openai_key_here
+ANTHROPIC_API_KEY=your_anthropic_key_here
+NANOGPT_API_KEY=your_nanogpt_key_here
+
+# Optional: Notion Integration
+NOTION_TOKEN=your_notion_integration_token
+
+# Optional: Web Scraping
+FIRECRAWL_API_URL=http://localhost:3002
+FIRECRAWL_API_KEY=your_firecrawl_key
+
+# Optional: Deep Research (ODR)
+TAVILY_API_KEY=your_tavily_search_key
+
+# Optional: Caching & Performance
+REDIS_URL=redis://localhost:6379
+
+# System Configuration
+TESSERACT_CMD=/usr/bin/tesseract  # Adjust for your system
+```
+
+#### **User Management (config/users.yaml)**
+```yaml
+users:
+  admin:
+    username: admin
+    password_hash: $2b$12$... # Use generate_password.py script
+    role: admin
+  researcher:
+    username: researcher  
+    password_hash: $2b$12$...
+    role: researcher
+```
+
+### **3. Run Application**
+```bash
+# Local development
+streamlit run main.py
+
+# Production
+streamlit run main.py --server.port 8501 --server.address 0.0.0.0
+```
+
+Visit `http://localhost:8501` and login with your configured credentials.
+
+## 📖 Usage Guide
+
+### **Interactive Research Workflow**
+
+1. **🔐 Authentication**: Login with username/password
+2. **📋 Research Query**: Define your research question or topic
+3. **📄 Document Upload**: Upload PDF, DOCX, or text files (optional)
+4. **🌐 Web Content**: Add specific URLs or enable sitemap crawling (optional)
+5. **📊 DocSend Processing**: Process presentation decks with email authentication (optional)
+6. **🔬 Research Mode Selection**:
+   - **Classic Mode**: Traditional AI analysis of provided sources
+   - **Deep Research (ODR)**: Advanced multi-agent research with web search
+7. **⚙️ Configuration**: Adjust research parameters (breadth, depth, tool calls)
+8. **🤖 AI Analysis**: Generate comprehensive research reports
+9. **💬 Interactive Chat**: Ask questions about the research using RAG
+
+### **Notion Automation Workflow**
+
+1. **🔗 Notion Setup**: Configure Notion integration token
+2. **📊 Database Selection**: Choose Notion database to monitor
+3. **⚡ Enable Monitoring**: Start real-time database polling
+4. **🎯 Configure Triggers**: Set up automated research workflows
+5. **📈 AI Scoring**: Enable intelligent project evaluation
+6. **📝 Report Publishing**: Automatic research report generation to Notion
+
+### **Crypto Intelligence Workflow**
+
+1. **🔌 MCP Connection**: Connect to CoinGecko data source
+2. **💰 Coin Selection**: Choose cryptocurrencies to analyze
+3. **📊 Technical Analysis**: Generate interactive charts and metrics
+4. **🧠 AI Insights**: Get AI-powered market analysis and predictions
+5. **📈 Portfolio Tracking**: Monitor multiple coins and trends
+
+## 🔧 Advanced Configuration
+
+### **Deep Research (ODR) Setup**
+
+Deep Research uses LangChain's Open Deep Research framework for advanced multi-agent research:
+
+```bash
+# Install ODR dependencies (included in requirements.txt)
+pip install langgraph langchain-community langchain-openai langchain-anthropic
+
+# Get Tavily API key for web search
+# Visit: https://tavily.com/
+export TAVILY_API_KEY=your_tavily_key_here
+```
+
+**ODR Parameters for Detailed Reports:**
+- **Breadth (6-15)**: Number of concurrent research units
+- **Depth (4-8)**: Research iteration depth  
+- **Max Tool Calls (8-15)**: Web searches per iteration
+
+**Ultra-Comprehensive Mode**: Breadth=10, Depth=6, Tools=12 (720 total operations)
+
+### **Model Configuration**
+
+The platform supports multiple AI providers and models:
+
+```python
+# Available Models
+AI_MODEL_OPTIONS = {
+    # Nano-GPT Models  
+    "dmind/dmind-1": "DMind-1",
+    "dmind/dmind-1-mini": "DMind-1 Mini",
+    
+    # OpenRouter Models
+    "qwen/qwen3-30b-a3b:free": "Qwen3 30B", 
+    "qwen/qwen3-235b-a22b:free": "Qwen3 235B",
+    "google/gemini-2.5-pro-preview": "Gemini 2.5 Pro",
+    "openai/o3": "OpenAI o3",
+    "openai/gpt-4.1": "GPT-4.1",
+    "anthropic/claude-sonnet-4": "Claude Sonnet 4",
+    "tngtech/deepseek-r1t-chimera:free": "DeepSeek R1T Chimera"
+}
+```
+
+### **Performance Optimization**
+
+#### **Redis Caching (Optional)**
+```bash
+# Install Redis
+docker run -d -p 6379:6379 redis:alpine
+
+# Configure in .env
+REDIS_URL=redis://localhost:6379
+```
+
+#### **Browser Configuration**
+```python
+# Chrome/Chromium (Recommended for DocSend)
+CHROME_BINARY=/usr/bin/google-chrome
+
+# Firefox Alternative
+FIREFOX_BINARY=/usr/bin/firefox
+```
+
+## 🔐 Security & Authentication
+
+### **User Management**
+
+The platform uses role-based access control:
+
+- **Admin**: Full system access, user management
+- **Researcher**: Research features, limited configuration
+
+**Password Generation:**
+```bash
+python -c "
+import bcrypt
+password = 'your_password_here'
+hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+print(hashed.decode('utf-8'))
+"
+```
+
+### **Security Features**
+
+- **🔐 bcrypt Password Hashing**: Secure password storage
+- **🛡️ Session Management**: Secure session tokens with expiration
+- **📝 Audit Logging**: Comprehensive action tracking
+- **🚧 Rate Limiting**: API abuse prevention
+- **🔒 Input Validation**: Sanitized user inputs
+- **🔑 API Key Management**: Environment variable security
+
+## 🧪 Testing
+
+### **Run Test Suite**
+```bash
+# Run all tests
+pytest
+
+# Run specific test categories
+pytest tests/test_research.py          # Research workflows
+pytest tests/test_notion_connection.py # Notion integration
+pytest tests/test_firecrawl.py        # Web scraping
+pytest tests/test_odr_service.py      # Deep Research
+pytest tests/test_browser_fix.py      # DocSend processing
+
+# Run with coverage
+pytest --cov=src tests/
+```
+
+### **Test Configuration**
+
+Tests require API credentials for integration testing:
+```env
+# Add to .env for testing
+NOTION_TOKEN=your_test_notion_token
+FIRECRAWL_API_KEY=your_test_firecrawl_key
+OPENROUTER_API_KEY=your_test_openrouter_key
+```
+
+## 🚀 Deployment
+
+### **Docker Deployment**
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - NOTION_TOKEN=${NOTION_TOKEN}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    depends_on:
+      - redis
+      
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+```
+
+### **AWS EC2 Deployment**
+
+```bash
+# Launch EC2 instance (Ubuntu 20.04+)
+# Install Docker and docker-compose
+sudo apt update
+sudo apt install docker.io docker-compose
+
+# Clone and deploy
+git clone <repository-url>
+cd ai-research-agent
+cp .env.example .env
+# Configure .env with your API keys
+sudo docker-compose up -d
+
+# Set up monitoring (optional)
+bash scripts/setup_monitoring.sh
+```
+
+### **Production Configuration**
+
+```bash
+# Environment setup
+export STREAMLIT_SERVER_PORT=80
+export STREAMLIT_SERVER_ADDRESS=0.0.0.0
+export STREAMLIT_SERVER_ENABLE_CORS=false
+export STREAMLIT_GLOBAL_DEVELOPMENT_MODE=false
+
+# Run with SSL (recommended)
+streamlit run main.py \
+  --server.port 443 \
+  --server.sslCertFile /path/to/cert.pem \
+  --server.sslKeyFile /path/to/key.pem
+```
+
+## 📊 API Integration Details
+
+### **OpenRouter Integration**
+- **50+ AI Models**: GPT, Claude, Gemini, Qwen, Llama, and more
+- **Unified API**: Single interface for multiple providers
+- **Rate Limiting**: Configurable requests per hour
+- **Fallback Strategy**: Automatic model switching on failures
+
+### **Notion Integration** 
+- **Database Monitoring**: Real-time change detection
+- **Automated Workflows**: Research pipeline triggers
+- **Content Publishing**: Direct page creation and updates
+- **Property Mapping**: Custom field synchronization
+
+### **Firecrawl Integration**
+- **Intelligent Scraping**: AI-powered content extraction
+- **Sitemap Discovery**: Automated URL discovery
+- **Batch Processing**: Multiple URL handling
+- **Rate Limiting**: Respectful crawling practices
+
+### **MCP (Model Context Protocol)**
+- **CoinGecko Integration**: Live cryptocurrency data
+- **Extensible Framework**: Plugin architecture for new providers
+- **Type Safety**: Structured data models
+- **Real-time Updates**: Live market data streams
+
+## 🤝 Contributing
+
+### **Development Setup**
+```bash
+# Fork and clone repository
+git clone https://github.com/yourusername/ai-research-agent.git
+cd ai-research-agent
+
+# Create development environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+
+# Install pre-commit hooks
+pre-commit install
+
+# Run development server
 streamlit run main.py
 ```
 
-### **Code Standards**
-- **PEP 8**: Follow Python style guidelines
-- **Type Hints**: Use type annotations for better code clarity
-- **Documentation**: Document all functions and classes
-- **Testing**: Write tests for new features
-- **Async/Await**: Use async patterns for I/O operations
+### **Code Style**
+- **Type Hints**: Required for all functions
+- **Docstrings**: Google style documentation
+- **Testing**: pytest with >80% coverage
+- **Linting**: flake8, black, isort
+- **Security**: bandit security scanning
 
-### **Architecture Guidelines**
-- **MVC Pattern**: Separate controllers, models, and views
-- **Dependency Injection**: Use dependency injection for services
-- **Error Handling**: Implement comprehensive error handling
-- **Logging**: Add appropriate logging for debugging and monitoring
+### **Contribution Guidelines**
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support & Documentation
+
+### **Getting Help**
+- **Issues**: [GitHub Issues](https://github.com/yourusername/ai-research-agent/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/ai-research-agent/discussions)
+- **Documentation**: [Wiki](https://github.com/yourusername/ai-research-agent/wiki)
+
+### **Common Issues & Solutions**
+
+#### **DocSend Processing Issues**
+```bash
+# Install Chrome/Chromium
+# Ubuntu: sudo apt install google-chrome-stable
+# macOS: brew install --cask google-chrome
+# Windows: Download from google.com/chrome
+
+# Verify Tesseract installation
+tesseract --version
+```
+
+#### **Notion Connection Issues**
+```bash
+# Verify integration token
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Notion-Version: 2022-06-28" \
+     https://api.notion.com/v1/users/me
+```
+
+#### **Memory Issues with Large Documents**
+```python
+# Increase memory limits in config
+MAX_DOCUMENT_SIZE = 50 * 1024 * 1024  # 50MB
+CHUNK_SIZE = 1000  # Reduce for memory constraints
+```
+
+## 🔄 Version History
+
+### **Current: v2.1.0**
+- ✅ Deep Research (ODR) integration
+- ✅ Enhanced crypto intelligence
+- ✅ Improved UI/UX
+- ✅ Advanced authentication
+- ✅ Comprehensive testing
+
+### **Previous Versions**
+- **v2.0.0**: Notion automation, crypto chatbot
+- **v1.5.0**: DocSend integration, RAG chat
+- **v1.0.0**: Basic research and document processing
+
+## 🙏 Acknowledgments
+
+- **LangChain**: Open Deep Research framework
+- **OpenRouter**: Multi-model AI access
+- **Streamlit**: Web application framework
+- **Notion**: CRM integration platform
+- **Firecrawl**: Web scraping service
+- **CoinGecko**: Cryptocurrency data API
 
 ---
 
-## 📄 License
+**Built with ❤️ for researchers, analysts, and knowledge workers worldwide.**
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-## 🆘 Support
-
-### **Documentation**
-- **API Reference**: Detailed API documentation in `/docs`
-- **Examples**: Sample configurations and use cases in `/examples`
-- **FAQ**: Frequently asked questions and solutions
-
-### **Community**
-- **Issues**: Report bugs and request features on GitHub
-- **Discussions**: Join community discussions for help and tips
-- **Contributing**: See CONTRIBUTING.md for development guidelines
-
-### **Professional Support**
-For enterprise deployments and custom integrations, contact the development team.
-
----
-
-## 🚀 Roadmap
-
-### **Upcoming Features**
-- **Multi-language OCR**: Enhanced language support for global documents
-- **API Endpoints**: RESTful API for programmatic access
-- **Cloud Deployment**: One-click cloud deployment options
-- **Advanced Analytics**: Document similarity and trend analysis
-- **Integration Plugins**: Connectors for popular research tools
-
-### **Performance Improvements**
-- **GPU Acceleration**: CUDA support for faster OCR processing
-- **Distributed Processing**: Multi-node processing capabilities
-- **Advanced Caching**: Intelligent content caching strategies
-- **Real-time Processing**: Live document processing and analysis
-
-### **AI Enhancements**
-- **Custom Models**: Support for fine-tuned domain-specific models
-- **Multi-modal Processing**: Image and video content analysis
-- **Advanced RAG**: Improved retrieval and generation capabilities
-- **Automated Workflows**: AI-driven research workflow automation
-
----
-
-
-*Version: 2.0.0 - Major release with DocSend integration and consolidated architecture*
-
-
+*For detailed API documentation, advanced configuration, and deployment guides, visit our [comprehensive documentation wiki](https://github.com/yourusername/ai-research-agent/wiki).*

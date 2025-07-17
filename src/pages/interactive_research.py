@@ -273,6 +273,7 @@ class InteractiveResearchPage(BasePage):
             'last_user_prompt_for_processing': None,
             'docsend_content': '',
             'docsend_metadata': {},
+            'deep_research_enabled': False,
         }
         self.init_session_state(required_keys)
     
@@ -332,7 +333,122 @@ class InteractiveResearchPage(BasePage):
             st.session_state.previous_selected_model = selected_model_identifier
         
         st.session_state.selected_model = selected_model_identifier
+        
+        # Deep Research Toggle
+        await self._render_deep_research_toggle()
         st.markdown("---")
+    
+    async def _render_deep_research_toggle(self) -> None:
+        """Render the deep research toggle section."""
+        st.subheader("🔬 Research Engine Selection")
+        
+        # Check ODR availability (cache the result to avoid re-renders)
+        if 'odr_available' not in st.session_state:
+            st.session_state.odr_available = await self._check_odr_availability()
+        odr_available = st.session_state.odr_available
+        
+        if odr_available:
+            # Initialize default value if not set
+            if 'deep_research_enabled' not in st.session_state:
+                st.session_state.deep_research_enabled = False
+                
+            # Use current state to determine default selection
+            current_index = 1 if st.session_state.deep_research_enabled else 0
+                
+            research_mode = st.radio(
+                "Choose Research Engine:",
+                options=["Classic", "Deep Research (ODR)"],
+                index=current_index,
+                key="research_mode_selector",
+                help="Classic: Traditional research using provided sources. Deep Research: Advanced multi-agent research with web search and citations."
+            )
+            
+            # Update session state based on selection
+            deep_research_enabled = (research_mode == "Deep Research (ODR)")
+            st.session_state.deep_research_enabled = deep_research_enabled
+            
+            # Debug info
+            if st.checkbox("Show Debug Info", key="debug_research_mode"):
+                st.write(f"Current mode: {research_mode}")
+                st.write(f"Session state enabled: {st.session_state.deep_research_enabled}")
+                st.write(f"Radio index: {current_index}")
+            
+            if deep_research_enabled:
+                st.success("🔬 **Deep Research Mode**: Using LangChain's Open Deep Research framework for advanced multi-agent research with web search and citations.")
+                
+                # ODR configuration options
+                with st.expander("🔧 Advanced Configuration", expanded=False):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        breadth = st.number_input(
+                            "Research Breadth",
+                            min_value=1,
+                            max_value=15,
+                            value=st.session_state.get('deep_research_breadth', 6),
+                            key="deep_research_breadth",
+                            help="Number of concurrent research units (6+ recommended for detailed reports)"
+                        )
+                    
+                    with col2:
+                        depth = st.number_input(
+                            "Research Depth", 
+                            min_value=1,
+                            max_value=8,
+                            value=st.session_state.get('deep_research_depth', 4),
+                            key="deep_research_depth",
+                            help="Number of research iterations (4+ for comprehensive analysis)"
+                        )
+                    
+                    with col3:
+                        max_tools = st.number_input(
+                            "Max Tool Calls",
+                            min_value=1,
+                            max_value=15,
+                            value=st.session_state.get('deep_research_max_tools', 8),
+                            key="deep_research_max_tools",
+                            help="Maximum tool calls per iteration (8+ for thorough research)"
+                        )
+                    
+                    # Session state values are automatically managed by widget keys
+                
+                # Show capabilities and parameter impact
+                st.info("🚀 **Enhanced for Detailed Reports**: Multi-agent research, web search, citation tracking, iterative refinement")
+                
+                # Show parameter impact
+                total_research_effort = breadth * depth * max_tools
+                st.success(f"📊 **Research Intensity**: {total_research_effort} total research operations (Breadth × Depth × Tools)")
+                
+                if total_research_effort >= 150:
+                    st.success("🔥 **Ultra-Comprehensive Mode**: Maximum detail and length")
+                elif total_research_effort >= 100:
+                    st.info("📈 **High-Detail Mode**: Very thorough research")
+                elif total_research_effort >= 50:
+                    st.warning("📋 **Standard Mode**: Good detail level")
+                else:
+                    st.warning("⚡ **Quick Mode**: Basic research only")
+                
+            else:
+                st.info("📝 **Classic Mode**: Traditional research using direct AI analysis of provided sources")
+        else:
+            # ODR not available - show classic only
+            st.warning("🔬 **Deep Research Unavailable**: ODR dependencies not found. Using Classic mode.")
+            st.session_state.deep_research_enabled = False
+            st.info("📝 **Classic Mode**: Traditional research using direct AI analysis of provided sources")
+    
+    async def _check_odr_availability(self) -> bool:
+        """Check if ODR is available."""
+        try:
+            from src.services.odr_service import check_odr_availability
+            is_available, error = await check_odr_availability()
+            
+            if not is_available and error:
+                # Store error for display in admin panel
+                st.session_state.odr_error = error
+            
+            return is_available
+        except Exception:
+            return False
     
     async def _render_research_query(self) -> None:
         """Render the research query input section."""
@@ -900,6 +1016,18 @@ class InteractiveResearchPage(BasePage):
         """Render the report generation section."""
         st.subheader("6. Generate Report")
         
+        # Check if ODR clarification is needed
+        if st.session_state.get('odr_clarification_needed', False):
+            await self._render_clarification_ui()
+            return
+        
+        # Show different messaging based on research mode
+        deep_research_enabled = st.session_state.get('deep_research_enabled', False)
+        if deep_research_enabled:
+            st.info("🔬 **Deep Research Mode**: Only a research query is required. All other inputs (documents, URLs, etc.) are optional and will enhance the research if provided.")
+        else:
+            st.info("📝 **Classic Mode**: Provide at least one input source (research query, documents, URLs, crawl options, or DocSend deck).")
+        
         if st.button("Generate Unified Report", key="generate_report_btn"):
             await self._generate_report()
     
@@ -912,10 +1040,18 @@ class InteractiveResearchPage(BasePage):
         has_crawl = bool(st.session_state.get('crawl_start_url', '').strip())
         has_selected_urls = bool(st.session_state.selected_sitemap_urls)
         has_docsend = bool(st.session_state.get('docsend_content', ''))
+        deep_research_enabled = st.session_state.get('deep_research_enabled', False)
         
-        if not (research_query or has_docs or has_urls or has_crawl or has_selected_urls or has_docsend):
-            self.show_warning("Please provide a research query, upload documents, enter URLs, select crawling options, or process a DocSend deck.")
-            return
+        # For Deep Research mode, only require a research query (all other inputs are optional)
+        if deep_research_enabled:
+            if not research_query.strip():
+                self.show_warning("Please provide a research query for Deep Research mode. All other inputs (documents, URLs, etc.) are optional.")
+                return
+        else:
+            # For Classic mode, require at least one input source
+            if not (research_query or has_docs or has_urls or has_crawl or has_selected_urls or has_docsend):
+                self.show_warning("Please provide a research query, upload documents, enter URLs, select crawling options, or process a DocSend deck.")
+                return
         
         with st.spinner("Generating report..."):
             try:
@@ -1091,124 +1227,20 @@ class InteractiveResearchPage(BasePage):
             st.error("DEBUG: OpenRouter client not found in session state")
             return ""
         
-        # Prepare content
+        # Check if deep research is enabled
+        deep_research_enabled = st.session_state.get('deep_research_enabled', False)
         research_query = st.session_state.get('research_query_input', '')
         
-        # Combine document content
-        doc_content = []
-        for doc in st.session_state.processed_documents_content:
-            doc_content.append(f"--- Document: {doc['name']} ---\n{doc['text']}\n---")
-        combined_docs = "\n".join(doc_content)
-        
-        # Combine web content
-        web_content = []
-        for item in st.session_state.scraped_web_content:
-            if item.get("status") == "success" and item.get("content"):
-                web_content.append(f"--- URL: {item['url']} ---\n{item['content']}\n---")
-        
-        for item in st.session_state.crawled_web_content:
-            if item.get("status") == "success" and item.get("content"):
-                web_content.append(f"--- Crawled: {item['url']} ---\n{item['content']}\n---")
-        
-        combined_web = "\n".join(web_content)
-        
-        # Add DocSend content
-        docsend_content = st.session_state.get('docsend_content', '')
-        docsend_metadata = st.session_state.get('docsend_metadata', {})
-        
-        # Build prompt
-        if research_query:
-            prompt = f"Research Query: {research_query}\n\n"
+        # Route to appropriate research engine
+        if deep_research_enabled:
+            st.write("🔬 **Deep Research Mode**: Using ODR framework...")
+            return await self._call_odr_for_report(research_query)
         else:
-            prompt = "Please generate a comprehensive report based on the provided content.\n\n"
+            st.write("📝 **Classic Mode**: Using traditional research...")
+            # Continue with existing logic
         
-        if combined_docs:
-            prompt += f"Document Content:\n{combined_docs}\n\n"
-        
-        if combined_web:
-            prompt += f"Web Content:\n{combined_web}\n\n"
-        
-        if docsend_content:
-            slides_processed = docsend_metadata.get('processed_slides', 0)
-            total_slides = docsend_metadata.get('total_slides', 0)
-            docsend_url = docsend_metadata.get('url', 'Unknown')
-            
-            prompt += f"DocSend Presentation Content:\n"
-            prompt += f"--- DocSend Deck: {docsend_url} ({slides_processed}/{total_slides} slides processed) ---\n"
-            prompt += f"{docsend_content}\n\n"
-        
-        prompt += "Based on the above content, please generate a comprehensive research report."
-        
-        try:
-            # Debug information about prompt
-            st.write(f"📝 Prompt length: {len(prompt)} characters")
-            st.write(f"📊 Content summary:")
-            st.write(f"  - Research query: {len(research_query)} chars")
-            st.write(f"  - Combined docs: {len(combined_docs)} chars")
-            st.write(f"  - Combined web: {len(combined_web)} chars")
-            st.write(f"  - DocSend content: {len(docsend_content)} chars")
-            
-            model_to_use = st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL)
-            system_prompt = st.session_state.get("system_prompt", "You are a helpful research assistant.")
-            
-            st.write(f"🤖 Using model: {model_to_use}")
-            
-            # Record start time for processing time calculation
-            start_time = time.time()
-            
-            st.write("📡 Making API call...")
-            response = await st.session_state.openrouter_client.generate_response(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                model_override=model_to_use
-            )
-            
-            # Calculate processing time
-            processing_time = time.time() - start_time
-            st.write(f"⏱️ API call completed in {processing_time:.2f} seconds")
-            st.write(f"📄 Response length: {len(response) if response else 0} characters")
-            
-            # Log AI interaction
-            log_ai_interaction(
-                user=st.session_state.get('username', 'UNKNOWN'),
-                role=st.session_state.get('role', 'N/A'),
-                model=model_to_use,
-                prompt=prompt,
-                response=response or "",
-                processing_time=processing_time,
-                page="Interactive Research",
-                success=bool(response)
-            )
-            
-            return response or ""
-            
-        except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"ERROR in _call_ai_for_report: {error_details}")
-            
-            # Log failed AI interaction
-            log_ai_interaction(
-                user=st.session_state.get('username', 'UNKNOWN'),
-                role=st.session_state.get('role', 'N/A'),
-                model=st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL),
-                prompt=prompt if 'prompt' in locals() else "",
-                response="",
-                processing_time=0.0,
-                page="Interactive Research",
-                success=False
-            )
-            
-            self.show_error(f"Error calling AI: {str(e)}")
-            st.error(f"**AI API Error Details:**\n```\n{error_details}\n```")
-            return ""
-        except Exception as outer_e:
-            import traceback
-            outer_error_details = traceback.format_exc()
-            print(f"OUTER ERROR in _call_ai_for_report: {outer_error_details}")
-            self.show_error(f"Outer error in AI call: {str(outer_e)}")
-            st.error(f"**Outer Error Details:**\n```\n{outer_error_details}\n```")
-            return ""
+        # Use classic mode for remaining processing
+        return await self._call_classic_for_report(research_query)
     
     async def _build_rag_context(self, report_id: str) -> None:
         """Build RAG context for the report."""
@@ -1234,6 +1266,11 @@ class InteractiveResearchPage(BasePage):
                 docsend_metadata = st.session_state.get('docsend_metadata', {})
                 docsend_url = docsend_metadata.get('url', 'Unknown')
                 all_text.append(f"--- DocSend: {docsend_url} ---\n{docsend_content}")
+            
+            # Add deep research content to RAG
+            deep_research_content = st.session_state.get('deep_research_content', '')
+            if deep_research_content:
+                all_text.append(f"--- Deep Research Results ---\n{deep_research_content}")
             
             combined_text = "\n\n---\n\n".join(all_text)
             text_chunks = split_text_into_chunks(combined_text)
@@ -1493,6 +1530,353 @@ Streamlit: {st.__version__}
                         st.code(f"• {key}")
                     if len(other_keys) > 10:
                         st.caption(f"... and {len(other_keys) - 10} more")
+    
+    async def _call_odr_for_report(self, research_query: str) -> str:
+        """Generate report using ODR service."""
+        try:
+            from src.services.odr_service import generate_deep_research_report
+            
+            # Prepare sources for ODR
+            documents = []
+            for doc in st.session_state.processed_documents_content:
+                documents.append({
+                    'name': doc['name'],
+                    'content': doc['text']
+                })
+            
+            web_sources = []
+            for item in st.session_state.scraped_web_content:
+                if item.get("status") == "success" and item.get("content"):
+                    web_sources.append({
+                        'url': item['url'],
+                        'content': item['content'],
+                        'status': item['status']
+                    })
+            
+            for item in st.session_state.crawled_web_content:
+                if item.get("status") == "success" and item.get("content"):
+                    web_sources.append({
+                        'url': item['url'],
+                        'content': item['content'],
+                        'status': item['status']
+                    })
+            
+            docsend_sources = []
+            docsend_content = st.session_state.get('docsend_content', '')
+            if docsend_content:
+                docsend_metadata = st.session_state.get('docsend_metadata', {})
+                docsend_sources.append({
+                    'url': docsend_metadata.get('url', 'Unknown'),
+                    'content': docsend_content,
+                    'metadata': docsend_metadata
+                })
+            
+            # ODR configuration
+            config = {
+                'breadth': st.session_state.get('deep_research_breadth', 6),
+                'depth': st.session_state.get('deep_research_depth', 4),
+                'max_tool_calls': st.session_state.get('deep_research_max_tools', 8),
+                'model': st.session_state.get('selected_model')
+            }
+            
+            # Debug information
+            st.write(f"📊 **ODR Input Summary:**")
+            st.write(f"  - Documents: {len(documents)}")
+            st.write(f"  - Web sources: {len(web_sources)}")
+            st.write(f"  - DocSend sources: {len(docsend_sources)}")
+            st.write(f"  - Configuration: {config}")
+            
+            # Show content integration status
+            total_sources = len(documents) + len(web_sources) + len(docsend_sources)
+            if total_sources > 0:
+                st.success(f"✅ **User Content Integration**: {total_sources} sources will be embedded as PRIMARY sources in ODR research")
+                st.info("🎯 **Research Strategy**: ODR will use your provided content as the foundation and supplement with web search for additional insights")
+            else:
+                st.info("🔍 **Pure Web Research**: ODR will conduct comprehensive web-based research on your query")
+            
+            # Generate report
+            with st.spinner("🔬 Conducting deep research... This may take several minutes."):
+                start_time = time.time()
+                
+                result = await generate_deep_research_report(
+                    query=research_query,
+                    documents=documents,
+                    web_sources=web_sources,
+                    docsend_sources=docsend_sources,
+                    config=config
+                )
+                
+                processing_time = time.time() - start_time
+                
+                if result.needs_clarification:
+                    # Handle clarification request
+                    st.warning("🤔 **ODR Needs Clarification**")
+                    st.write("ODR is asking for more details to provide better research:")
+                    
+                    # Show the clarification question
+                    st.info(result.clarification_question)
+                    
+                    # Store clarification context in session state
+                    st.session_state.odr_clarification_needed = True
+                    st.session_state.odr_clarification_question = result.clarification_question
+                    st.session_state.odr_original_query = research_query
+                    st.session_state.odr_original_config = config
+                    st.session_state.odr_original_sources = {
+                        'documents': documents,
+                        'web_sources': web_sources,
+                        'docsend_sources': docsend_sources
+                    }
+                    
+                    # Show clarification response UI
+                    await self._render_clarification_ui()
+                    
+                    return "Research paused for clarification. Please provide additional details above."
+                    
+                elif result.success:
+                    st.success(f"✅ **ODR Research Completed** in {processing_time:.1f}s")
+                    st.write(f"  - Content length: {len(result.content):,} characters")
+                    st.write(f"  - Citations: {len(result.citations)}")
+                    st.write(f"  - Sources processed: {len(result.sources_used)}")
+                    
+                    # Clear any clarification state
+                    if 'odr_clarification_needed' in st.session_state:
+                        del st.session_state.odr_clarification_needed
+                    
+                    # Store ODR metadata for later use
+                    st.session_state.odr_result_metadata = result.research_metadata
+                    st.session_state.odr_citations = result.citations
+                    
+                    return result.content
+                else:
+                    st.error(f"❌ **ODR Research Failed**: {result.error_message}")
+                    
+                    # Fallback to classic mode
+                    st.warning("🔄 **Falling back to Classic mode**")
+                    st.session_state.deep_research_enabled = False
+                    return await self._call_classic_for_report(research_query)
+                    
+        except Exception as e:
+            st.error(f"❌ **ODR Error**: {str(e)}")
+            
+            # Fallback to classic mode
+            st.warning("🔄 **Falling back to Classic mode**")
+            st.session_state.deep_research_enabled = False
+            return await self._call_classic_for_report(research_query)
+    
+    async def _render_clarification_ui(self) -> None:
+        """Render UI for responding to ODR clarification questions."""
+        st.subheader("🔍 Provide Additional Details")
+        
+        # Text area for clarification response
+        clarification_response = st.text_area(
+            "Your Response:",
+            height=150,
+            placeholder="Please provide the additional details requested above...",
+            key="odr_clarification_response"
+        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📝 Continue Research with Details", key="continue_odr_research"):
+                if clarification_response.strip():
+                    await self._continue_odr_with_clarification(clarification_response)
+                else:
+                    st.warning("Please provide a response before continuing.")
+        
+        with col2:
+            if st.button("⏭️ Skip Clarification", key="skip_odr_clarification"):
+                st.session_state.odr_clarification_needed = False
+                st.info("Continuing without additional clarification...")
+                st.rerun()
+    
+    async def _continue_odr_with_clarification(self, clarification_response: str) -> None:
+        """Continue ODR research with clarification response."""
+        try:
+            from src.services.odr_service import get_odr_service, ODRSource
+            
+            # Get stored context
+            original_query = st.session_state.get('odr_original_query', '')
+            original_config = st.session_state.get('odr_original_config', {})
+            original_sources = st.session_state.get('odr_original_sources', {})
+            
+            # Convert sources back to ODRSource objects
+            sources = []
+            
+            # Documents
+            for doc in original_sources.get('documents', []):
+                sources.append(ODRSource(
+                    content=doc['content'],
+                    source_type="document",
+                    metadata={'name': doc['name']},
+                    title=doc['name']
+                ))
+            
+            # Web sources
+            for web in original_sources.get('web_sources', []):
+                sources.append(ODRSource(
+                    content=web['content'],
+                    source_type="web",
+                    metadata={'status': web.get('status', 'success')},
+                    url=web['url'],
+                    title=f"Web: {web['url']}"
+                ))
+            
+            # DocSend sources
+            for docsend in original_sources.get('docsend_sources', []):
+                sources.append(ODRSource(
+                    content=docsend['content'],
+                    source_type="docsend",
+                    metadata=docsend.get('metadata', {}),
+                    url=docsend['url'],
+                    title="DocSend Presentation"
+                ))
+            
+            # Continue research with clarification
+            with st.spinner("🔬 Continuing research with your additional details..."):
+                service = await get_odr_service()
+                result = await service.continue_research_with_clarification(
+                    clarification_response=clarification_response,
+                    original_query=original_query,
+                    sources=sources,
+                    config=original_config
+                )
+                
+                if result.success:
+                    st.success("✅ **Research Completed Successfully!**")
+                    
+                    # Clear clarification state
+                    st.session_state.odr_clarification_needed = False
+                    
+                    # Store the result
+                    st.session_state.unified_report_content = result.content
+                    st.session_state.report_generated_for_chat = True
+                    
+                    # Generate report ID for chat
+                    import pandas as pd
+                    report_id = f"report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S%f')}"
+                    st.session_state.current_report_id_for_chat = report_id
+                    
+                    st.rerun()
+                else:
+                    st.error(f"❌ **Research Failed**: {result.error_message}")
+                    
+        except Exception as e:
+            st.error(f"❌ **Error continuing research**: {str(e)}")
+    
+    async def _call_classic_for_report(self, research_query: str) -> str:
+        """Generate report using classic pipeline (extracted from original logic)."""
+        # Combine document content
+        doc_content = []
+        for doc in st.session_state.processed_documents_content:
+            doc_content.append(f"--- Document: {doc['name']} ---\n{doc['text']}\n---")
+        combined_docs = "\n".join(doc_content)
+        
+        # Combine web content
+        web_content = []
+        for item in st.session_state.scraped_web_content:
+            if item.get("status") == "success" and item.get("content"):
+                web_content.append(f"--- URL: {item['url']} ---\n{item['content']}\n---")
+        
+        for item in st.session_state.crawled_web_content:
+            if item.get("status") == "success" and item.get("content"):
+                web_content.append(f"--- Crawled: {item['url']} ---\n{item['content']}\n---")
+        
+        combined_web = "\n".join(web_content)
+        
+        # Add DocSend content
+        docsend_content = st.session_state.get('docsend_content', '')
+        docsend_metadata = st.session_state.get('docsend_metadata', {})
+        
+        # Build prompt
+        prompt_intro = ""
+        if research_query:
+            prompt_intro = f"Research Query: {research_query}\n\n"
+        else:
+            prompt_intro = "Please generate a comprehensive report based on the provided content.\n\n"
+        
+        prompt = prompt_intro
+        
+        if combined_docs:
+            prompt += f"Document Content:\n{combined_docs}\n\n"
+        
+        if combined_web:
+            prompt += f"Web Content:\n{combined_web}\n\n"
+        
+        if docsend_content:
+            slides_processed = docsend_metadata.get('processed_slides', 0)
+            total_slides = docsend_metadata.get('total_slides', 0)
+            docsend_url = docsend_metadata.get('url', 'Unknown')
+            
+            prompt += f"DocSend Presentation Content:\n"
+            prompt += f"--- DocSend Deck: {docsend_url} ({slides_processed}/{total_slides} slides processed) ---\n"
+            prompt += f"{docsend_content}\n\n"
+        
+        prompt += "Based on the above content, please generate a comprehensive research report."
+        
+        try:
+            # Debug information about prompt
+            st.write(f"📝 Prompt length: {len(prompt)} characters")
+            st.write(f"📊 Content summary:")
+            st.write(f"  - Research query: {len(research_query)} chars")
+            st.write(f"  - Combined docs: {len(combined_docs)} chars")
+            st.write(f"  - Combined web: {len(combined_web)} chars")
+            st.write(f"  - DocSend content: {len(docsend_content)} chars")
+            
+            model_to_use = st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL)
+            system_prompt = st.session_state.get("system_prompt", "You are a helpful research assistant.")
+            
+            st.write(f"🤖 Using model: {model_to_use}")
+            
+            # Record start time for processing time calculation
+            start_time = time.time()
+            
+            st.write("📡 Making API call...")
+            response = await st.session_state.openrouter_client.generate_response(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model_override=model_to_use
+            )
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
+            st.write(f"⏱️ API call completed in {processing_time:.2f} seconds")
+            st.write(f"📄 Response length: {len(response) if response else 0} characters")
+            
+            # Log AI interaction
+            log_ai_interaction(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                model=model_to_use,
+                prompt=prompt,
+                response=response or "",
+                processing_time=processing_time,
+                page="Interactive Research",
+                success=bool(response)
+            )
+            
+            return response or ""
+            
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"ERROR in _call_classic_for_report: {error_details}")
+            
+            # Log failed AI interaction
+            log_ai_interaction(
+                user=st.session_state.get('username', 'UNKNOWN'),
+                role=st.session_state.get('role', 'N/A'),
+                model=st.session_state.get("selected_model", OPENROUTER_PRIMARY_MODEL),
+                prompt=prompt if 'prompt' in locals() else "",
+                response="",
+                processing_time=0.0,
+                page="Interactive Research",
+                success=False
+            )
+            
+            self.show_error(f"Error calling AI: {str(e)}")
+            st.error(f"**AI API Error Details:**\n```\n{error_details}\n```")
+            return ""
     
     async def _render_chat_interface(self) -> None:
         """Render chat interface if report is generated."""
