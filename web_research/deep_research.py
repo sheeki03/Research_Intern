@@ -6,9 +6,8 @@ from .data_acquisition.services import search_service
 from .ai.providers import trim_prompt, get_client_response
 import sys
 from pathlib import Path
-# Add the project root to the path to import from root prompt.py
-sys.path.append(str(Path(__file__).parent.parent))
-from prompt import system_prompt
+# Import from the web_research directory instead of root
+from .prompt import system_prompt
 import json
 from src.config import SYSTEM_PROMPT
 # Use simple OpenAI client instead of complex OpenRouterClient to avoid import issues
